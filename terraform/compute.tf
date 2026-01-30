@@ -2,7 +2,6 @@
 locals {
   post_confirmation_handler = "post_confirmation.lambda_handler"
   messaging_stream_handler  = "messaging_stream.lambda_handler"
-  db_connection_string = "postgresql://${aws_db_instance.webapp_rds_instance.username}:${aws_db_instance.webapp_rds_instance.password}@${aws_db_instance.webapp_rds_instance.endpoint}/${aws_db_instance.webapp_rds_instance.db_name}"
 }
 
 # CloudWatch Log Group for Post Confirmation Lambda
@@ -30,7 +29,7 @@ resource "aws_lambda_function" "webapp_post_confirmation" {
 
   environment {
     variables = {
-      PROD_CONNECTION_STRING = local.db_connection_string
+      RDS_SECRET_ARN = aws_secretsmanager_secret.rds_credentials.arn
     }
   }
 

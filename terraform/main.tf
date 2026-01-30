@@ -2,6 +2,11 @@ provider "aws" {
   region = "ap-southeast-2"
 }
 
+provider "aws" {
+  alias  = "us-east-1"
+  region = "us-east-1"
+}
+
 data "aws_ami" "ubuntu" {
   most_recent = true
 
@@ -13,20 +18,10 @@ data "aws_ami" "ubuntu" {
   owners = ["099720109477"] # Canonical
 }
 
-data "dotenv" "main" {
-  filename = "../.env"
-}
-
-data "http" "current_ip" {
-  url = "https://ifconfig.me/ip"
-}
-
 data "aws_caller_identity" "current" {}
 
 data "aws_prefix_list" "s3" {
   name = "com.amazonaws.ap-southeast-2.s3"
 }
 
-data "aws_prefix_list" "cloudwatch" {
-  name = "com.amazonaws.ap-southeast-2.logs"
-}
+data "aws_region" "current" {}

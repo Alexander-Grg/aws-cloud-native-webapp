@@ -37,7 +37,7 @@ resource "aws_db_instance" "webapp_rds_instance" {
 
   tags = {
     Name        = "webapp-rds-instance"
-    Environment = "production"
+    Environment =var.environment
   }
 }
 
@@ -107,7 +107,7 @@ resource "aws_dynamodb_table" "webapp_messages" {
 
   tags = {
     Name        = "webapp-messages"
-    Environment = "production"
+    Environment = var.environment
     Application = "webapp"
   }
 }

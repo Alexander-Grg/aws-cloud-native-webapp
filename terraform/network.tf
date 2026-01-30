@@ -7,7 +7,7 @@ resource "aws_vpc" "main" {
 
   tags = {
     Name        = "main-vpc"
-    Environment = "production"
+    Environment = var.environment
   }
 }
 

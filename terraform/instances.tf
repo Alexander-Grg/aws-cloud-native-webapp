@@ -21,13 +21,3 @@ resource "aws_instance" "app_server" {
     Name = "app_server"
   }
 }
-
-output "instance_public_ip" {
-  value = aws_instance.app_server.public_ip
-  description = "Public IP (Managed via SSM)"
-}
-
-output "instance_public_dns" {
-  value = aws_instance.app_server.public_dns
-  description = "Public DNS for SSH access"
-}

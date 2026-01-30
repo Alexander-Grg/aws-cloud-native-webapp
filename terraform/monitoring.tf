@@ -138,7 +138,7 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_write_throttled_events" {
 
 # Billing Alarms
 resource "aws_cloudwatch_metric_alarm" "billing_alarm" {
-  provider            = aws.south
+  provider            = aws.us-east-1
   alarm_name          = "${var.project_name}-billing-alarm"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
@@ -181,7 +181,7 @@ resource "aws_cloudwatch_dashboard" "main_dashboard" {
           ]
           view    = "timeSeries"
           stacked = false
-          region  = "ap-southeast-1"
+          region  = data.aws_region.current.name
           title   = "RDS Metrics"
           period  = 300
         }
@@ -202,7 +202,7 @@ resource "aws_cloudwatch_dashboard" "main_dashboard" {
           ]
           view    = "timeSeries"
           stacked = false
-          region  = "ap-southeast-1"
+          region  = data.aws_region.current.name
           title   = "DynamoDB Metrics"
           period  = 300
         }
@@ -243,12 +243,6 @@ resource "aws_cloudwatch_metric_alarm" "application_errors" {
   }
 }
 
-# Provider configuration for multi-region resources
-provider "aws" {
-  alias  = "south"
-  region = "ap-southeast-2"
-}
-
 # Outputs
 output "sns_topic_arn" {
   description = "ARN of the SNS topic for CloudWatch alerts"
@@ -259,5 +253,3 @@ output "dashboard_url" {
   description = "URL of the CloudWatch dashboard"
   value       = "https://console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=${aws_cloudwatch_dashboard.main_dashboard.dashboard_name}"
 }
-
-data "aws_region" "current" {}

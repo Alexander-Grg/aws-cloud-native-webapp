@@ -6,14 +6,13 @@ resource "aws_security_group" "lambda_sg" {
   description = "Security Group for Lambda functions"
   vpc_id      = aws_vpc.main.id
 
-  egress {
+    egress {
     description = "AWS Services (S3, CloudWatch)"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     prefix_list_ids = [
-      data.aws_prefix_list.s3.id,
-      data.aws_prefix_list.cloudwatch.id,
+      data.aws_prefix_list.s3.id
     ]
   }
 
@@ -24,7 +23,7 @@ resource "aws_security_group" "lambda_sg" {
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.main.cidr_block]  # Simpler: Allow to VPC
   }
-  
+
   tags = {
     Name        = "webapp-lambda-sg"
     Environment = var.environment
@@ -45,9 +44,17 @@ resource "aws_security_group" "rds_sg" {
     security_groups = [aws_security_group.lambda_sg.id]
   }
 
+    ingress {
+    description     = "PostgreSQL from EC2"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_subnet.subnet_2a.cidr_block]
+  }
+
   tags = {
     Name        = "webapp-rds-sg"
-    Environment = "production"
+    Environment = var.environment
     Component   = "rds"
   }
 }
@@ -58,22 +65,13 @@ resource "aws_security_group" "post_srv_sg" {
   description = "Security group for Webapp services on ECS"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description = "HTTP access"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_ip]
-  }
-
   egress {
     description = "Allow HTTPS (ECR, Logs, AWS APIs)"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     prefix_list_ids = [ 
-    data.aws_prefix_list.s3.id, 
-    data.aws_prefix_list.cloudwatch.id
+      data.aws_prefix_list.s3.id
     ]
   }
 
@@ -82,13 +80,42 @@ resource "aws_security_group" "post_srv_sg" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.rds_sg.id]
+    security_groups = [aws_vpc.main.cidr_block]
   }
+
 
   tags = {
     Name        = "post-srv-sg"
-    Environment = "production"
+    Environment = var.environment
     ManagedBy   = "terraform"
+  }
+}
+
+# Security Group for VPC Endpoints
+resource "aws_security_group" "vpc_endpoints_sg" {
+  name        = "vpc-endpoints-sg"
+  description = "Security group for VPC endpoints (SSM, EC2Messages, SSMMessages)"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTPS from VPC"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
+egress {
+  description = "Allow HTTPS to AWS services"
+  from_port   = 443
+  to_port     = 443
+  protocol    = "tcp"
+  cidr_blocks = ["0.0.0.0/0"] 
+}
+
+  tags = {
+    Name        = "vpc-endpoints-sg"
+    Environment = var.environment
   }
 }
 
@@ -215,6 +242,8 @@ resource "aws_iam_policy" "lambda_dynamodb_policy" {
   })
 }
 
+
+
 resource "aws_iam_role_policy_attachment" "lambda_dynamodb_policy_attachment" {
   role       = aws_iam_role.messaging_stream_lambda_role.name
   policy_arn = aws_iam_policy.lambda_dynamodb_policy.arn
@@ -333,6 +362,43 @@ resource "aws_iam_role_policy" "authenticated_policy" {
           "mobileanalytics:PutEvents"
         ]
         Resource = ["*"]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_secrets_access" {
+  name = "lambda-secrets-access"
+  role = aws_iam_role.webapp_post_confirmation_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = aws_secretsmanager_secret.rds_credentials.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "cognito_authenticated_limited" {
+  name = "cognito-authenticated-limited"
+  role = aws_iam_role.authenticated.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cognito-identity:GetId",
+          "cognito-identity:GetCredentialsForIdentity"
+        ]
+        Resource = "*"
       }
     ]
   })
