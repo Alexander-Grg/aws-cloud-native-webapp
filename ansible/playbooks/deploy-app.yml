@@ -1,0 +1,228 @@
+---
+- name: Configure and Deploy Backend
+  hosts: app_server
+  become: true
+  gather_facts: true
+  vars:
+    app_dir: /opt/app
+    app_user: ubuntu
+    aws_region: ap-southeast-2
+    db_port: 5432
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install dependencies
+      apt:
+        name: [python3-pip, unzip, jq, docker.io]
+        state: present
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Ensure Docker is running
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Install AWS CLI v2 (Required for ECR Login)
+      block:
+        - name: Check if AWS CLI is installed
+          command: aws --version
+          register: aws_cli_check
+          ignore_errors: true
+          changed_when: false
+        
+        - name: Download and Install AWS CLI
+          shell: |
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -o awscliv2.zip
+            ./aws/install --update
+          args:
+            chdir: /tmp
+          when: aws_cli_check.rc != 0
+
+    - name: Install NGINX
+      apt:
+        name: nginx
+        state: present
+
+    - name: Create app directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      loop:
+        - "{{ app_dir }}"
+        - "{{ app_dir }}/logs"
+        - "{{ app_dir }}/config"
+
+    - name: Login to ECR
+      shell: |
+        aws ecr get-login-password --region {{ aws_region }} | \
+        docker login --username AWS --password-stdin {{ ecr_registry }}
+      become_user: "{{ app_user }}"
+
+    - name: Create Docker network
+      docker_network:
+        name: app-network
+        state: present
+
+    - name: Pull Docker image
+      docker_image:
+        name: "{{ ecr_registry }}/{{ backend_repo }}:{{ backend_tag }}"
+        source: pull
+        force_source: yes
+
+    - name: Stop and remove old container
+      docker_container:
+        name: backend-app
+        state: absent
+      ignore_errors: true
+
+    - name: Create environment file
+      copy:
+        dest: "{{ app_dir }}/.env"
+        content: |
+          DB_HOST={{ db_host }}
+          DB_PORT={{ db_port }}
+          DB_NAME={{ db_name }}
+          DB_USER=postgres
+          DB_PASSWORD={{ db_password }}
+          AWS_REGION={{ aws_region }}
+          FRONTEND_URL=http://localhost:3000
+          BACKEND_URL=http://localhost:4567 
+          NODE_ENV={{ environment }}             
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0600'
+
+    - name: Run application container
+      docker_container:
+        name: backend-app
+        image: "{{ ecr_registry }}/{{ backend_repo }}:{{ backend_tag }}"
+        state: started
+        restart_policy: always
+        ports:
+          - "127.0.0.1:4567:4567"
+        env_file: "{{ app_dir }}/.env"
+        volumes:
+          - "{{ app_dir }}/logs:/app/logs"
+        networks:
+          - name: app-network
+        healthcheck:
+          test: ["CMD", "curl", "-f", "http://localhost:4567/api/health-check"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+          start_period: 40s
+
+    - name: Create NGINX Configuration for Flask
+      copy:
+        dest: /etc/nginx/sites-available/backend-flask
+        content: |
+          server {
+              listen 80;
+              server_name _;
+              
+              # Security headers
+              add_header X-Frame-Options "SAMEORIGIN" always;
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header X-XSS-Protection "1; mode=block" always;
+              
+              # Timeouts
+              proxy_read_timeout 300s;
+              proxy_connect_timeout 75s;
+              
+              # Buffer settings
+              client_max_body_size 10M;
+              proxy_buffering on;
+              proxy_buffer_size 128k;
+              proxy_buffers 4 256k;
+              proxy_busy_buffers_size 256k;
+              
+              # Headers
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              
+              location / {
+                  proxy_pass http://127.0.0.1:4567;
+              }
+              
+              # Health check endpoint
+              location /api/health-check {
+                  proxy_pass http://127.0.0.1:4567/api/health-check;
+                  access_log off;
+              }
+              
+              # Logging
+              access_log /var/log/nginx/backend-access.log;
+              error_log /var/log/nginx/backend-error.log;
+          }
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload NGINX
+
+    - name: Enable NGINX site
+      file:
+        src: /etc/nginx/sites-available/backend-flask
+        dest: /etc/nginx/sites-enabled/backend-flask
+        state: link
+      notify: Reload NGINX
+
+    - name: Remove default NGINX site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload NGINX
+
+    - name: Ensure NGINX is running
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Verify container status
+      shell: docker ps --filter "name=backend-app" --format "{{ '{{' }}.Status{{ '}}' }}"
+      register: container_status
+      changed_when: false
+
+    - name: Verify NGINX status
+      systemd:
+        name: nginx
+        state: started
+      changed_when: false
+
+    - name: Check application health via NGINX
+      uri:
+        url: "http://localhost/api/health-check"
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 10
+      delay: 5
+
+    - debug:
+        msg: 
+          - "Container status: {{ container_status.stdout }}"
+          - "NGINX status: running"
+          - "Health check: {{ health_check.status }} OK"
+
+  handlers:
+    - name: Reload NGINX
+      service:
+        name: nginx
+        state: reloaded

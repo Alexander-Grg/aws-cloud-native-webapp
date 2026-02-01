@@ -44,12 +44,28 @@ resource "aws_security_group" "rds_sg" {
     security_groups = [aws_security_group.lambda_sg.id]
   }
 
-    ingress {
+  ingress {
     description     = "PostgreSQL from EC2"
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_subnet.subnet_2a.cidr_block]
+    security_groups = [aws_security_group.EC2_SG.id]
+  }
+
+  egress {
+    description     = "Allow responses to EC2"
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = [aws_security_group.EC2_SG.id]
+  }
+
+  egress {
+    description     = "Allow responses to Lambda"
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = [aws_security_group.lambda_sg.id]
   }
 
   tags = {
@@ -59,30 +75,44 @@ resource "aws_security_group" "rds_sg" {
   }
 }
 
-# SG for an ECS, not using it now, but will be in future.
-resource "aws_security_group" "post_srv_sg" {
-  name        = "post-srv-sg"
-  description = "Security group for Webapp services on ECS"
+# SG for EC2
+resource "aws_security_group" "EC2_SG" {
+  name        = "EC2_SG"
+  description = "Security group for EC2 server"
   vpc_id      = aws_vpc.main.id
 
-  egress {
-    description = "Allow HTTPS (ECR, Logs, AWS APIs)"
+  ingress {
+    description = "Allow HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] 
+  }
+
+  ingress {
+    description = "Allow HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    prefix_list_ids = [ 
-      data.aws_prefix_list.s3.id
-    ]
+    cidr_blocks = ["0.0.0.0/0"] 
   }
+
+# For debugging
+  # ingress {
+  #   description = "ICMP from admin IP"
+  #   from_port   = 8  # Echo Request
+  #   to_port     = 0
+  #   protocol    = "icmp"
+  #   cidr_blocks = [var.admin_ip]
+  # }
 
   egress {
-    description     = "Access to RDS"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_vpc.main.cidr_block]
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
-
 
   tags = {
     Name        = "post-srv-sg"
@@ -479,9 +509,9 @@ output "client_id" {
   value = aws_cognito_user_pool_client.client.id
 }
 
-output "post_srv_sg_id" {
+output "EC2_SG_id" {
   description = "ID of the post-srv-sg security group"
-  value       = aws_security_group.post_srv_sg.id
+  value       = aws_security_group.EC2_SG.id
 }
 
 output "ssm_instance_profile_name" {
