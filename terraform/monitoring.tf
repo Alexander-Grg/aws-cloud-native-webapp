@@ -138,7 +138,7 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_write_throttled_events" {
 
 # Billing Alarms
 resource "aws_cloudwatch_metric_alarm" "billing_alarm" {
-  provider            = us-east-1
+  provider            = aws.us-east-1
   alarm_name          = "${var.project_name}-billing-alarm"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
