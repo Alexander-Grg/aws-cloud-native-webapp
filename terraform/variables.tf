@@ -10,12 +10,6 @@ variable "db_password" {
   sensitive = true
 }
 
-variable "allowed_ip" {
-  description = "IP that allowed for the AWS security group"
-  type = string
-  sensitive = true
-}
-
 variable "aws_account_id" {
   description = "AWS account ID"
   type = string

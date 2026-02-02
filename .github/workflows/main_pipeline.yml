@@ -222,15 +222,8 @@ jobs:
         instance_id: ${{ steps.tf_output.outputs.instance_id }}
         db_endpoint: ${{ steps.tf_output.outputs.db_endpoint }}
       env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION}}
-
-        TF_VAR_default_region: ${{ secrets.AWS_DEFAULT_REGION}}
-        TF_VAR_db_password: ${{ secrets.PG_PASSWORD }}
-        TF_VAR_allowed_ip: ${{ secrets.ALLOWED_IP }}
-        TF_VAR_admin_ip: "0.0.0.0/0"
-        TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }} 
+        TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+        TF_CLOUD_ORGANIZATION: 'westlaw_personal'
       steps:
         - uses: actions/checkout@v4
 
@@ -240,7 +233,10 @@ jobs:
             name: lambda-packages
             path: ./terraform
 
-        - uses: hashicorp/setup-terraform@v3
+        - name: Setup Terraform
+          uses: hashicorp/setup-terraform@v3
+          with:
+            terraform_wrapper: false
 
         # A. IaC Security Scan (Tfsec)
         - name: Run Tfsec
