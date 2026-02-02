@@ -222,7 +222,7 @@ jobs:
         instance_id: ${{ steps.tf_output.outputs.instance_id }}
         db_endpoint: ${{ steps.tf_output.outputs.db_endpoint }}
       env:
-        TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+        TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
         TF_CLOUD_ORGANIZATION: 'westlaw_personal'
       steps:
         - uses: actions/checkout@v4
