@@ -21,7 +21,9 @@ resource "aws_db_instance" "webapp_rds_instance" {
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
   db_subnet_group_name   = aws_db_subnet_group.webapp_db_subnet_group.name
   
-  backup_retention_period = 7
+  # Ignore for tfsec, because backup retention is out of the FREE AWS Tier.
+  # tfsec:ignore:aws-rds-specify-backup-retention
+  # backup_retention_period = 7
     # For production env should be false
   skip_final_snapshot     = true
     # For production env should be true
