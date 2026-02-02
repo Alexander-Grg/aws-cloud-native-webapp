@@ -250,13 +250,6 @@ jobs:
         - name: Terraform Init
           run: terraform init
 
-        - name: Terraform Plan
-          run: terraform plan -no-color
-
-        - name: Terraform Apply
-          if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-          run: terraform apply -auto-approve
-
         - name: Get Instance ID
           id: tf_output
           if: github.ref == 'refs/heads/main'
