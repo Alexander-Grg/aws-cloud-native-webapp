@@ -17,7 +17,9 @@ resource "aws_instance" "app_server" {
     http_tokens   = "required"
   }
 
-  tags = {
-    Name = "app_server"
-  }
+tags = {
+  Name        = "app_server"
+  Role        = "app"
+  Environment = var.environment
+}
 }

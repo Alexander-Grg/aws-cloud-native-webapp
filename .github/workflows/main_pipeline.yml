@@ -213,49 +213,38 @@ jobs:
             ./terraform/messaging_stream.zip
 
   manage-infra:
-      needs: build-lambda-packages
-      runs-on: ubuntu-latest
-      defaults:
-        run:
-          working-directory: ./terraform
-      outputs:
-        instance_id: ${{ steps.tf_output.outputs.instance_id }}
-        db_endpoint: ${{ steps.tf_output.outputs.db_endpoint }}
-      env:
-        TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-        TF_CLOUD_ORGANIZATION: 'westlaw_personal'
-      steps:
-        - uses: actions/checkout@v4
+    needs: build-lambda-packages
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+      TF_CLOUD_ORGANIZATION: westlaw_personal
 
-        - name: Download Lambda packages
-          uses: actions/download-artifact@v4
-          with:
-            name: lambda-packages
-            path: ./terraform
+    steps:
+      - uses: actions/checkout@v4
 
-        - name: Setup Terraform
-          uses: hashicorp/setup-terraform@v3
-          with:
-            terraform_wrapper: false
+      - name: Download Lambda packages
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-packages
+          path: ./terraform
 
-        # A. IaC Security Scan (Tfsec)
-        - name: Run Tfsec
-          uses: aquasecurity/tfsec-action@v1.0.0
-          with:
-            working_directory: ./terraform
-            minumum_severity: MEDIUM
-            soft_fail: false
-            format: sarif
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
-        - name: Terraform Init
-          run: terraform init
+      - name: Run Tfsec
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: ./terraform
+          minumum_severity: MEDIUM
+          soft_fail: false
 
-        - name: Get Instance ID
-          id: tf_output
-          if: github.ref == 'refs/heads/main'
-          run: |
-            ID=$(terraform output -raw instance_id)
-            echo "instance_id=$ID" >> $GITHUB_OUTPUT
+      - name: Terraform Init
+        run: terraform init
 
   configure-and-deploy:
     needs: [manage-infra, build-and-scan]
@@ -264,7 +253,8 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: $AWS_REGION
+      AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -272,31 +262,22 @@ jobs:
         run: |
           pip install ansible boto3 botocore
           ansible-galaxy collection install community.aws amazon.aws
-          
-          # Install Session Manager Plugin
+
           curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o "session-manager-plugin.deb"
           sudo dpkg -i session-manager-plugin.deb
-        
-      - name: Wait for Instance to be Online
-        run: |
-          INSTANCE_ID="${{ needs.manage-infra.outputs.instance_id }}"
-          echo "Waiting for instance $INSTANCE_ID to be online in SSM..."
-          aws ssm wait instance-online --instance-ids "$INSTANCE_ID"
 
-      - name: Create Inventory File
+      - name: Create Inventory File (tag-based)
         run: |
-          INSTANCE_ID="${{ needs.manage-infra.outputs.instance_id }}"
           echo "[app_server]" > inventory.ini
-          echo "$INSTANCE_ID ansible_connection=community.aws.aws_ssm ansible_aws_ssm_region=${{ env.AWS_REGION }}" >> inventory.ini
+          echo "tag_Role_app ansible_connection=community.aws.aws_ssm ansible_aws_ssm_region=${{ env.AWS_REGION }}" >> inventory.ini
           cat inventory.ini
 
       - name: Run Ansible Playbook
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          
+
           TAG="${{ needs.build-and-scan.outputs.docker_tag }}"
-          DB_HOST="${{ needs.manage-infra.outputs.db_endpoint }}"
-          
+
           ansible-playbook -i inventory.ini ./ansible/deploy-app.yml \
-            --extra-vars "ecr_registry=$REGISTRY backend_repo=${{ env.ECR_BACKEND_REPO }} backend_tag=$TAG db_host=$DB_HOST"
+            --extra-vars "ecr_registry=$REGISTRY backend_repo=${{ env.ECR_BACKEND_REPO }} backend_tag=$TAG environment=prod"

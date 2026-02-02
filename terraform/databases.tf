@@ -37,10 +37,11 @@ resource "aws_db_instance" "webapp_rds_instance" {
   monitoring_interval = 60
   monitoring_role_arn = aws_iam_role.rds_monitoring_role.arn
 
-  tags = {
-    Name        = "webapp-rds-instance"
-    Environment =var.environment
-  }
+tags = {
+  Name        = "webapp-rds-instance"
+  Role        = "db"
+  Environment = var.environment
+}
 }
 
 # Output the database endpoint
