@@ -280,5 +280,5 @@ jobs:
 
           TAG="${{ needs.build-and-scan.outputs.docker_tag }}"
 
-          ansible-playbook -i inventory.ini ./ansible/deploy-app.yml \
+          ansible-playbook -i inventory.ini ./ansible/playbooks/deploy-app.yml \
             --extra-vars "ecr_registry=$REGISTRY backend_repo=${{ env.ECR_BACKEND_REPO }} backend_tag=$TAG environment=prod"
