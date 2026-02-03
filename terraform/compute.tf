@@ -1,10 +1,20 @@
-# Environment detection in locals
+data "archive_file" "post_confirmation_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../lambdas/post_confirmation"
+  output_path = "${path.module}/post_confirmation.zip"
+}
+
+data "archive_file" "messaging_stream_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/../lambdas/messaging_stream"
+  output_path = "${path.module}/messaging_stream.zip"
+}
+
 locals {
   post_confirmation_handler = "post_confirmation.lambda_handler"
   messaging_stream_handler  = "messaging_stream.lambda_handler"
 }
 
-# CloudWatch Log Group for Post Confirmation Lambda
 resource "aws_cloudwatch_log_group" "lambda_post_confirmation_logs" {
   name              = "/aws/lambda/${var.function_name_lambda_post_confirmation}"
   retention_in_days = 14
@@ -17,7 +27,8 @@ resource "aws_cloudwatch_log_group" "lambda_post_confirmation_logs" {
 
 # Post Confirmation Lambda Function
 resource "aws_lambda_function" "webapp_post_confirmation" {
-  filename         = "${path.module}/post_confirmation.zip"
+  filename         = data.archive_file.post_confirmation_zip.output_path
+  source_code_hash = data.archive_file.post_confirmation_zip.output_base64sha256
   function_name    = var.function_name_lambda_post_confirmation
   role             = aws_iam_role.webapp_post_confirmation_role.arn
   handler          = local.post_confirmation_handler
@@ -80,7 +91,8 @@ resource "aws_cloudwatch_log_group" "webapp_messaging_stream_logs" {
 
 # Messaging Stream Lambda Function
 resource "aws_lambda_function" "webapp_messaging_stream" {
-  filename         = "${path.module}/messaging_stream.zip"
+  filename         = data.archive_file.messaging_stream_zip.output_path
+  source_code_hash = data.archive_file.messaging_stream_zip.output_base64sha256
   function_name    = var.function_name_webapp_messaging_stream
   role             = aws_iam_role.messaging_stream_lambda_role.arn
   handler          = local.messaging_stream_handler
