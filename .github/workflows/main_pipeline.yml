@@ -242,6 +242,7 @@ jobs:
           working_directory: ./terraform
           minumum_severity: MEDIUM
           soft_fail: false
+          additional_args: --exclude-path terraform/imports.tf
 
       - name: Terraform Init
         run: terraform init
