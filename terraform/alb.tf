@@ -2,7 +2,7 @@
 resource "aws_security_group" "alb_sg" {
   name        = "webapp-alb-sg"
   description = "Allow HTTPS/HTTP from the world"
-  vpc_id      = aws_vpc.main_vpc.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description = "HTTPS from world"
@@ -57,7 +57,7 @@ resource "aws_lb_target_group" "app_tg" {
   name     = "webapp-target-group"
   port     = 80
   protocol = "HTTP"
-  vpc_id   = aws_vpc.main_vpc.id
+  vpc_id   = aws_vpc.main.id
 
   health_check {
     path                = "/api/health-check"
