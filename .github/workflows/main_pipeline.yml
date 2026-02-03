@@ -213,39 +213,40 @@ jobs:
             ./terraform/messaging_stream.zip
 
   manage-infra:
-    needs: build-lambda-packages
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./terraform
-    env:
-      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-      TF_CLOUD_ORGANIZATION: 'westlaw_personal'
+      needs: build-lambda-packages
+      runs-on: ubuntu-latest
+      defaults:
+        run:
+          working-directory: ./terraform
+      env:
+        TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+        TF_CLOUD_ORGANIZATION: 'westlaw_personal'
 
-    steps:
-      - uses: actions/checkout@v4
+      steps:
+        - uses: actions/checkout@v4
 
-      - name: Download Lambda packages
-        uses: actions/download-artifact@v4
-        with:
-          name: lambda-packages
-          path: ./terraform
+        - name: Download Lambda packages
+          uses: actions/download-artifact@v4
+          with:
+            name: lambda-packages
+            path: ./terraform
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
+        - name: Setup Terraform
+          uses: hashicorp/setup-terraform@v3
+          with:
+            terraform_wrapper: false
 
-      - name: Run Tfsec
-        uses: aquasecurity/tfsec-action@v1.0.0
-        with:
-          working_directory: ./terraform
-          minimum_severity: HIGH
-          soft_fail: false
-          additional_args: --exclude-path terraform/imports.tf
+        - name: Run Trivy IaC Scanner
+          uses: aquasecurity/trivy-action@master
+          with:
+            scan-type: 'config'
+            scan-ref: './terraform'
+            format: 'table'
+            exit-code: '1'
+            severity: 'CRITICAL,HIGH'
 
-      - name: Terraform Init
-        run: terraform init
+        - name: Terraform Init
+          run: terraform init
 
   configure-and-deploy:
     needs: [manage-infra, build-and-scan]
