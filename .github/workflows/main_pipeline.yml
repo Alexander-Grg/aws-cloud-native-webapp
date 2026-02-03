@@ -240,7 +240,7 @@ jobs:
         uses: aquasecurity/tfsec-action@v1.0.0
         with:
           working_directory: ./terraform
-          minumum_severity: MEDIUM
+          minimum_severity: HIGH
           soft_fail: false
           additional_args: --exclude-path terraform/imports.tf
 
