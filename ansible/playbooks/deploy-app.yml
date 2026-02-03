@@ -201,6 +201,7 @@
         src: /etc/nginx/sites-available/backend-flask
         dest: /etc/nginx/sites-enabled/backend-flask
         state: link
+        force: true
       notify: Reload NGINX
 
     - name: Remove default NGINX site
