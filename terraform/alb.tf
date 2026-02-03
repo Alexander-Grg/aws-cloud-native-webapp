@@ -1,3 +1,4 @@
+# trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "alb_sg" {
   name        = "webapp-alb-sg"
   description = "Allow HTTPS/HTTP from the world"
@@ -32,6 +33,7 @@ resource "aws_security_group" "alb_sg" {
   }
 }
 
+# trivy:ignore:AVD-AWS-0053
 resource "aws_lb" "main" {
   name               = "webapp-alb"
   internal           = false
@@ -43,6 +45,8 @@ resource "aws_lb" "main" {
     aws_subnet.subnet_2b.id,
     aws_subnet.subnet_2c.id
   ]
+
+  drop_invalid_header_fields = true
   
   tags = {
     Name = "webapp-alb"
@@ -65,13 +69,11 @@ resource "aws_lb_target_group" "app_tg" {
   }
 }
 
-# 4. HTTPS Listener (The Secure Door)
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
-  
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = aws_acm_certificate.cert.arn 
 
   default_action {

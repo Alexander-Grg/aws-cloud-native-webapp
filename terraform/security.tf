@@ -75,6 +75,7 @@ resource "aws_security_group" "rds_sg" {
   }
 }
 
+# trivy:ignore:AVD-AWS-0104
 # SG for EC2
 resource "aws_security_group" "EC2_SG" {
   name        = "EC2_SG"

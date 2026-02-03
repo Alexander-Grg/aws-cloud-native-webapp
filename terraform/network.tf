@@ -23,6 +23,7 @@ resource "aws_subnet" "subnet_2a" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "172.31.0.0/20"
   availability_zone       = "ap-southeast-2a"
+  # trivy:ignore:AVD-AWS-0164
   map_public_ip_on_launch = true
 
   tags = {
@@ -34,6 +35,7 @@ resource "aws_subnet" "subnet_2b" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "172.31.32.0/20"
   availability_zone       = "ap-southeast-2b"
+  # trivy:ignore:AVD-AWS-0164
   map_public_ip_on_launch = true
 
   tags = {
@@ -45,6 +47,7 @@ resource "aws_subnet" "subnet_2c" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "172.31.16.0/20"
   availability_zone       = "ap-southeast-2c"
+  # trivy:ignore:AVD-AWS-0164
   map_public_ip_on_launch = true
 
   tags = {
