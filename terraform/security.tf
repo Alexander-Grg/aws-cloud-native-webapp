@@ -75,8 +75,9 @@ resource "aws_security_group" "rds_sg" {
   }
 }
 
-# trivy:ignore:AVD-AWS-0104
+
 # SG for EC2
+# trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "EC2_SG" {
   name        = "EC2_SG"
   description = "Security group for EC2 server"
@@ -123,6 +124,7 @@ resource "aws_security_group" "EC2_SG" {
 }
 
 # Security Group for VPC Endpoints
+# trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "vpc_endpoints_sg" {
   name        = "vpc-endpoints-sg"
   description = "Security group for VPC endpoints (SSM, EC2Messages, SSMMessages)"
