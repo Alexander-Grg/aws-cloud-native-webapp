@@ -1,12 +1,12 @@
 data "archive_file" "post_confirmation_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/../lambdas/post_confirmation.py"
+  source_file  = "${path.module}/../lambdas/post_confirmation.py"
   output_path = "${path.module}/post_confirmation.zip"
 }
 
 data "archive_file" "messaging_stream_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/../lambdas/messaging_stream.py"
+  source_file  = "${path.module}/../lambdas/messaging_stream.py"
   output_path = "${path.module}/messaging_stream.zip"
 }
 
