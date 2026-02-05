@@ -140,6 +140,7 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_write_throttled_events" {
 resource "aws_sns_topic" "billing_alerts_topic" {
   provider = aws.us_east_1
   name     = "${var.project_name}-billing-alerts-topic"
+  kms_master_key_id = "alias/aws/sns"
 }
 
 resource "aws_sns_topic_subscription" "billing_email_subscription" {
