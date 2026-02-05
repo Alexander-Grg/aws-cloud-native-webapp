@@ -137,6 +137,18 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_write_throttled_events" {
 }
 
 # Billing Alarms
+resource "aws_sns_topic" "billing_alerts_topic" {
+  provider = aws.us_east_1
+  name     = "${var.project_name}-billing-alerts-topic"
+}
+
+resource "aws_sns_topic_subscription" "billing_email_subscription" {
+  provider  = aws.us_east_1
+  topic_arn = aws_sns_topic.billing_alerts_topic.arn
+  protocol  = "email"
+  endpoint  = var.alarm_email 
+}
+
 resource "aws_cloudwatch_metric_alarm" "billing_alarm" {
   provider            = aws.us_east_1
   alarm_name          = "${var.project_name}-billing-alarm"
@@ -148,7 +160,8 @@ resource "aws_cloudwatch_metric_alarm" "billing_alarm" {
   statistic           = "Maximum"
   threshold           = "1"
   alarm_description   = "This metric monitors estimated charges"
-  alarm_actions       = [aws_sns_topic.cloudwatch_alerts.arn]
+  
+  alarm_actions       = [aws_sns_topic.billing_alerts_topic.arn]
 
   dimensions = {
     Currency = "USD"
