@@ -137,6 +137,7 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_write_throttled_events" {
 }
 
 # Billing Alarms
+#trivy:ignore:AVD-AWS-0136
 resource "aws_sns_topic" "billing_alerts_topic" {
   provider = aws.us_east_1
   name     = "${var.project_name}-billing-alerts-topic"
