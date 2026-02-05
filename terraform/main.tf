@@ -3,8 +3,8 @@ provider "aws" {
 }
 
 provider "aws" {
-  alias  = "us_east-1"
-  region = "us_east-1"
+  alias  = "us-east-1"
+  region = "us-east-1"
 }
 
 data "aws_ami" "ubuntu" {
