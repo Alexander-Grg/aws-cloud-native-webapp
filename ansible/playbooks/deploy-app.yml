@@ -7,7 +7,7 @@
     app_dir: /opt/app
     app_user: ubuntu
     aws_region: ap-southeast-2
-    db_port: 5432
+    secret_name: "webapp-rds-credentials"
 
   tasks:
     - name: Update apt cache
@@ -15,10 +15,16 @@
         update_cache: yes
         cache_valid_time: 3600
 
-    - name: Install dependencies
+    - name: Install system dependencies
       apt:
         name: [python3-pip, unzip, jq, docker.io]
         state: present
+
+    - name: Install Python Docker SDK
+      pip:
+        name: docker
+        state: present
+        executable: pip3
 
     - name: Add ubuntu user to docker group
       user:
@@ -89,40 +95,23 @@
         state: absent
       ignore_errors: true
 
-    - name: Fetch RDS info
-      amazon.aws.rds_instance_info:
-        region: "{{ aws_region }}"
-        filters:
-          db-instance-id: webapp-db
-      register: rds_info
-
-    - set_fact:
-        db_host: "{{ rds_info.instances[0].endpoint.address }}"
-        db_name: "{{ rds_info.instances[0].db_name }}"
-
-    - name: Fetch DB password
-      amazon.aws.aws_ssm:
-        name: "/webapp/db/password"
-        region: "{{ aws_region }}"
-        with_decryption: true
-      register: db_pass
-
-    - set_fact:
-        db_password: "{{ db_pass.value }}"
+    - name: Fetch all DB Credentials from Secrets Manager
+      set_fact:
+        db_secrets: "{{ lookup('amazon.aws.aws_secret', secret_name, region=aws_region) | from_json }}"
 
     - name: Create environment file
       copy:
         dest: "{{ app_dir }}/.env"
         content: |
-          DB_HOST={{ db_host }}
-          DB_PORT={{ db_port }}
-          DB_NAME={{ db_name }}
-          DB_USER=postgres
-          DB_PASSWORD={{ db_password }}
+          DB_HOST={{ db_secrets.host }}
+          DB_PORT={{ db_secrets.port }}
+          DB_NAME={{ db_secrets.dbname }}
+          DB_USER={{ db_secrets.username }}
+          DB_PASSWORD={{ db_secrets.password }}
           AWS_REGION={{ aws_region }}
           FRONTEND_URL=http://localhost:3000
           BACKEND_URL=http://localhost:4567 
-          NODE_ENV={{ environment }}             
+          NODE_ENV={{ environment | default('production') }}             
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: '0600'
