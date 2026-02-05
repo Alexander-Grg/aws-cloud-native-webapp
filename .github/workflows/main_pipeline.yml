@@ -248,6 +248,9 @@ jobs:
         - name: Terraform Init
           run: terraform init
 
+        - name: Terraform Apply
+          run: terraform apply -auto-approve
+
   configure-and-deploy:
     needs: [manage-infra, build-and-scan]
     if: github.ref == 'refs/heads/main'
