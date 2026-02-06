@@ -258,6 +258,7 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ap-southeast-2
 
     steps:
       - uses: actions/checkout@v4
@@ -267,23 +268,35 @@ jobs:
           pip install ansible boto3 botocore
           ansible-galaxy collection install community.aws amazon.aws
 
+          # Install Session Manager Plugin (Required for SSM)
           curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o "session-manager-plugin.deb"
           sudo dpkg -i session-manager-plugin.deb
 
-      - name: Create Inventory File (tag-based)
+      - name: Create Inventory File (Dynamic Fetch)
         run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Role,Values=app" "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[].InstanceId" \
+            --output text)
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "None" ]; then
+            echo "::error::Could not find a running EC2 instance with tag Role=app"
+            exit 1
+          fi
+          
+          echo "Found Instance ID: $INSTANCE_ID"
+
           echo "[app_server]" > inventory.ini
-          echo "tag_Role_app ansible_connection=community.aws.aws_ssm ansible_aws_ssm_region=${{ env.AWS_REGION }}" >> inventory.ini
+          echo "$INSTANCE_ID ansible_connection=community.aws.aws_ssm ansible_aws_ssm_region=${{ env.AWS_REGION }} ansible_user=ubuntu" >> inventory.ini
+          
           cat inventory.ini
 
       - name: Run Ansible Playbook
-        env:
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-
           TAG="${{ needs.build-and-scan.outputs.docker_tag }}"
 
           ansible-playbook -i inventory.ini ./ansible/playbooks/deploy-app.yml \
-            --extra-vars "ecr_registry=$REGISTRY backend_repo=${{ env.ECR_BACKEND_REPO }} backend_tag=$TAG environment=prod"
+            --extra-vars "ecr_registry=$REGISTRY backend_repo=${{ env.ECR_BACKEND_REPO }} backend_tag=$TAG deploy_env=prod"
