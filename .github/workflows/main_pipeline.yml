@@ -298,10 +298,13 @@ jobs:
           cat inventory.ini
 
       - name: Run Ansible Playbook
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           TAG="${{ needs.build-and-scan.outputs.docker_tag }}"
 
-          ansible-playbook -i inventory.ini ./ansible/playbooks/deploy-app.yml \
+          ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app.yml \
             --extra-vars "ecr_registry=$REGISTRY backend_repo=${{ env.ECR_BACKEND_REPO }} backend_tag=$TAG deploy_env=prod"
