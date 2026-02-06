@@ -1,5 +1,8 @@
 resource "aws_secretsmanager_secret" "rds_credentials" {
   name = "${var.project_name}-rds-credentials"
+
+# I'm adding it because after TF destroy, secrets are not getting destroyed, and the next CI/CD run fails
+  recovery_window_in_days = 0
   
   tags = {
     Environment = var.environment
