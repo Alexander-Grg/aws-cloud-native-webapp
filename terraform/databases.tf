@@ -135,3 +135,60 @@ output "dynamodb_table_stream_label" {
   description = "Stream label of the DynamoDB table"
   value       = aws_dynamodb_table.webapp_messages.stream_label
 }
+
+# S3 bucket for Ansible
+resource "aws_s3_bucket" "ansible_bucket" {
+  bucket = "ansible-ops-${data.aws_caller_identity.current.account_id}-${var.default_region}"
+
+  force_destroy = true
+
+  tags = {
+    Name        = "Ansible Operations Bucket"
+    Environment = "Production"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "ansible_bucket_access" {
+  bucket = aws_s3_bucket.ansible_bucket.id
+
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "ansible_bucket_cleanup" {
+  bucket = aws_s3_bucket.ansible_bucket.id
+
+  rule {
+    id     = "expire-temp-files"
+    status = "Enabled"
+
+    expiration {
+      days = 1
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "ansible_s3_access" {
+  name = "ansible_s3_transfer_policy"
+  role = aws_iam_role.ec2_ssm_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.ansible_bucket.arn,
+          "${aws_s3_bucket.ansible_bucket.arn}/*"
+        ]
+      }
+    ]
+  })
+}
