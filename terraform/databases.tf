@@ -136,10 +136,9 @@ output "dynamodb_table_stream_label" {
   value       = aws_dynamodb_table.webapp_messages.stream_label
 }
 
-# S3 bucket for Ansible
+# S3 Bucket
 resource "aws_s3_bucket" "ansible_bucket" {
-  bucket = "ansible-ops-${data.aws_caller_identity.current.account_id}-${var.default_region}"
-
+  bucket        = "ansible-ops-${data.aws_caller_identity.current.account_id}-${var.default_region}"
   force_destroy = true
 
   tags = {
@@ -155,6 +154,17 @@ resource "aws_s3_bucket_public_access_block" "ansible_bucket_access" {
   ignore_public_acls      = true
   block_public_policy     = true
   restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "ansible_bucket_crypto" {
+  bucket = aws_s3_bucket.ansible_bucket.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.ansible_key.arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "ansible_bucket_cleanup" {
@@ -178,6 +188,7 @@ resource "aws_iam_role_policy" "ansible_s3_access" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "AllowS3Access"
         Effect = "Allow"
         Action = [
           "s3:GetObject",
@@ -187,6 +198,17 @@ resource "aws_iam_role_policy" "ansible_s3_access" {
         Resource = [
           aws_s3_bucket.ansible_bucket.arn,
           "${aws_s3_bucket.ansible_bucket.arn}/*"
+        ]
+      },
+      {
+        Sid    = "AllowKMSDecryption"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = [
+          aws_kms_key.ansible_key.arn
         ]
       }
     ]

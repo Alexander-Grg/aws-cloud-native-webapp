@@ -445,7 +445,19 @@ resource "aws_cognito_identity_pool_roles_attachment" "main" {
   }
 }
 
-# KMS
+# KMS keys
+
+# FOR S3 (Ansible)
+resource "aws_kms_key" "ansible_key" {
+  description             = "KMS key for Ansible S3 bucket encryption"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+}
+
+resource "aws_kms_alias" "ansible_key_alias" {
+  name          = "alias/ansible-bucket-key"
+  target_key_id = aws_kms_key.ansible_key.key_id
+}
 
 # FOR RDS
 resource "aws_kms_key" "rds_pi_key" {
