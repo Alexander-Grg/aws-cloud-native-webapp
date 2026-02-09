@@ -17,7 +17,7 @@
 
     - name: Install system dependencies
       apt:
-        name: [python3-pip, unzip, jq, docker.io, python3-docker]
+        name: [python3-pip, unzip, jq, docker.io, python3-docker, acl]
         state: present
 
     - name: Add ubuntu user to docker group
