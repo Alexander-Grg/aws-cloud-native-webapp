@@ -293,8 +293,7 @@ jobs:
 
           # Create Inventory
           echo "[app_server]" > inventory.ini
-          echo "$INSTANCE_ID ansible_connection=community.aws.aws_ssm ansible_aws_ssm_region=${{ env.AWS_REGION }} ansible_user=ubuntu ansible_python_interpreter=/usr/bin/python3" >> inventory.ini
-          
+          echo "$INSTANCE_ID ansible_connection=amazon.aws.aws_ssm ansible_aws_ssm_region=${{ env.AWS_REGION }} ansible_aws_ssm_transfer_method=binary ansible_user=ubuntu ansible_python_interpreter=/usr/bin/python3" >> inventory.ini
           cat inventory.ini
 
       - name: Run Ansible Playbook
