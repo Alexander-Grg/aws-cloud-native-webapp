@@ -295,7 +295,6 @@ jobs:
           [app_server:vars]
           ansible_connection=amazon.aws.aws_ssm
           ansible_aws_ssm_region=${{ env.AWS_REGION }}
-          ansible_user=ubuntu
           ansible_python_interpreter=/usr/bin/python3
           deploy_env=production
           ansible_aws_ssm_bucket_name=$BUCKET_NAME
