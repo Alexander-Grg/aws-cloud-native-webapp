@@ -445,6 +445,36 @@ resource "aws_cognito_identity_pool_roles_attachment" "main" {
   }
 }
 
+# ECR Pull Permissions for EC2
+resource "aws_iam_role_policy" "ecr_pull_access" {
+  name = "ecr_pull_policy"
+  role = aws_iam_role.ec2_ssm_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowECRLogin"
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowECRPull"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*" 
+      }
+    ]
+  })
+}
+
 # KMS keys
 
 # FOR S3 (Ansible)
