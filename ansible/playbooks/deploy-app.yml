@@ -82,6 +82,7 @@
         name: "{{ ecr_registry }}/{{ backend_repo }}:{{ backend_tag }}"
         source: pull
         force_source: yes
+      become_user: "{{ app_user }}"
 
     - name: Stop and remove old container
       docker_container:
