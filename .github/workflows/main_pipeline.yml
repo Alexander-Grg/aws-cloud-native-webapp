@@ -310,6 +310,9 @@ jobs:
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           TAG="${{ needs.build-and-scan.outputs.docker_tag }}"
+          export TF_VAR_ssl_cert="$(terraform output -raw ssl_cert_pem)"
+          export TF_VAR_ssl_key="$(terraform output -raw ssl_key_pem)"
 
           ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app.yml \
             --extra-vars "ecr_registry=$REGISTRY backend_repo=${{ env.ECR_BACKEND_REPO }} backend_tag=$TAG deploy_env=prod"
+            --extra-vars "ssl_cert_content=\"$TF_VAR_ssl_cert\" ssl_key_content=\"$TF_VAR_ssl_key\""

@@ -49,7 +49,7 @@ resource "aws_security_group" "rds_sg" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.EC2_SG.id]
+    security_groups = [aws_security_group.EC2_SG_Nginx.id]
   }
 
   egress {
@@ -57,7 +57,7 @@ resource "aws_security_group" "rds_sg" {
     from_port       = 0
     to_port         = 0
     protocol        = "-1"
-    security_groups = [aws_security_group.EC2_SG.id]
+    security_groups = [aws_security_group.EC2_SG_Nginx.id]
   }
 
   egress {
@@ -78,9 +78,9 @@ resource "aws_security_group" "rds_sg" {
 
 # SG for EC2
 # trivy:ignore:AVD-AWS-0104
-resource "aws_security_group" "EC2_SG" {
+resource "aws_security_group" "EC2_SG_Nginx" {
   name        = "EC2_SG"
-  description = "Security group for EC2 server"
+  description = "Security group for EC2 server, using Nginx"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -116,39 +116,8 @@ resource "aws_security_group" "EC2_SG" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
-    Name        = "post-srv-sg"
-    Environment = var.environment
-    ManagedBy   = "terraform"
-  }
-}
-
-# Security Group for VPC Endpoints
-# trivy:ignore:AVD-AWS-0104
-resource "aws_security_group" "vpc_endpoints_sg" {
-  name        = "vpc-endpoints-sg"
-  description = "Security group for VPC endpoints (SSM, EC2Messages, SSMMessages)"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "HTTPS from VPC"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-  }
-
-egress {
-  description = "Allow HTTPS to AWS services"
-  from_port   = 443
-  to_port     = 443
-  protocol    = "tcp"
-  cidr_blocks = ["0.0.0.0/0"] 
-}
-
-  tags = {
-    Name        = "vpc-endpoints-sg"
-    Environment = var.environment
+tags = {
+    Name = "nginx-secure-sg"
   }
 }
 
@@ -556,7 +525,7 @@ output "client_id" {
 
 output "EC2_SG_id" {
   description = "ID of the post-srv-sg security group"
-  value       = aws_security_group.EC2_SG.id
+  value       = aws_security_group.EC2_SG_Nginx.id
 }
 
 output "ssm_instance_profile_name" {

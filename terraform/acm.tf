@@ -20,7 +20,14 @@ resource "tls_self_signed_cert" "example" {
   ]
 }
 
-resource "aws_acm_certificate" "cert" {
-  private_key      = tls_private_key.example.private_key_pem
-  certificate_body = tls_self_signed_cert.example.cert_pem
+output "ssl_cert_pem" {
+  description = "The public SSL certificate content"
+  value       = tls_self_signed_cert.example.cert_pem
+  sensitive   = true
+}
+
+output "ssl_key_pem" {
+  description = "The private SSL key content"
+  value       = tls_private_key.example.private_key_pem
+  sensitive   = true
 }
