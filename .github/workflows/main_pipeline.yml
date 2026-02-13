@@ -259,22 +259,30 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ap-southeast-2
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
 
       - name: Install Ansible & AWS dependencies
         run: |
           pip install ansible boto3 botocore
           ansible-galaxy collection install community.aws amazon.aws
 
-      - name: Create Inventory File (Standard S3 Method)
+      - name: Create Inventory File
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          
           BUCKET_NAME="ansible-ops-${ACCOUNT_ID}-${{ env.AWS_REGION }}"
-          echo "Using Ansible Operations Bucket: $BUCKET_NAME"
-
+          
           INSTANCE_ID=$(aws ec2 describe-instances \
             --region ${{ env.AWS_REGION }} \
             --filters "Name=tag:Role,Values=app" "Name=instance-state-name,Values=running" \
@@ -285,8 +293,6 @@ jobs:
             echo "::error::Could not find a running EC2 instance with tag Role=app"
             exit 1
           fi
-          
-          echo "Found Instance ID: $INSTANCE_ID"
 
           cat <<EOF > inventory.ini
           [app_server]
@@ -300,19 +306,39 @@ jobs:
           ansible_aws_ssm_bucket_name=$BUCKET_NAME
           EOF
 
-          echo "Generated Inventory:"
-          cat inventory.ini
-
-      - name: Run Ansible Playbook
-        env:
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+      - name: Deploy with Ansible
+        working-directory: ./terraform
         run: |
+          # 1. Fetch SSL certs from Terraform state
+          CERT_CONTENT=$(terraform output -raw ssl_cert_pem)
+          KEY_CONTENT=$(terraform output -raw ssl_key_pem)
+
+          # 2. Return to root to run Ansible
+          cd ..
+
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           TAG="${{ needs.build-and-scan.outputs.docker_tag }}"
-          export TF_VAR_ssl_cert="$(terraform output -raw ssl_cert_pem)"
-          export TF_VAR_ssl_key="$(terraform output -raw ssl_key_pem)"
 
+          # 3. Create JSON file for variables (Safely handles SSL newlines)
+          jq -n \
+            --arg cert "$CERT_CONTENT" \
+            --arg key "$KEY_CONTENT" \
+            --arg reg "$REGISTRY" \
+            --arg repo "${{ env.ECR_BACKEND_REPO }}" \
+            --arg tag "$TAG" \
+            '{
+              ssl_cert_content: $cert, 
+              ssl_key_content: $key, 
+              ecr_registry: $reg, 
+              backend_repo: $repo, 
+              backend_tag: $tag,
+              deploy_env: "prod"
+            }' > ansible_vars.json
+
+          echo "Generated variables file (Key masked):"
+          cat ansible_vars.json | jq 'del(.ssl_key_content)'
+
+          # 4. Run Ansible using the JSON file
           ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app.yml \
-            --extra-vars "ecr_registry=$REGISTRY backend_repo=${{ env.ECR_BACKEND_REPO }} backend_tag=$TAG deploy_env=prod"
-            --extra-vars "ssl_cert_content=\"$TF_VAR_ssl_cert\" ssl_key_content=\"$TF_VAR_ssl_key\""
+            --extra-vars "@ansible_vars.json"
