@@ -79,7 +79,7 @@ resource "aws_security_group" "rds_sg" {
 # SG for EC2
 # trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "EC2_SG_Nginx" {
-  name        = "EC2_SG"
+  name        = "EC2_SG_Nginx"
   description = "Security group for EC2 server, using Nginx"
   vpc_id      = aws_vpc.main.id
 
