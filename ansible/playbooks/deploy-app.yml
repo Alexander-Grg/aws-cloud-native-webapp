@@ -256,6 +256,9 @@
         state: started
       changed_when: false
 
+    - name: Force NGINX reload before health check
+      meta: flush_handlers
+
     - name: Check application health via NGINX (HTTPS)
       uri:
         url: "https://localhost/api/health-check"
