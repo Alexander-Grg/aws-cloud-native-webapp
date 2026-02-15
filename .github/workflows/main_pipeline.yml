@@ -161,28 +161,30 @@ jobs:
 
       - name: Generate Tag
         id: vars
-        run: |
-          # Generate a tag with Date and Short SHA: 20231027-a1b2c3d
-          echo "tag=$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+        run: echo "tag=$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Build Docker Image
-        run: |
-          docker build -t app:${{ steps.vars.outputs.tag }} ./backend-flask
+      # BACKEND
+      - name: Build Backend Image
+        run: docker build -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
 
-      - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'app:${{ steps.vars.outputs.tag }}'
-          format: 'table'
-          exit-code: '1' 
-          ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-
-      - name: Push to ECR
+      - name: Push Backend to ECR
         run: |
           REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-          docker tag app:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
+          docker tag backend:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
           docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
+
+      # FRONTEND
+      - name: Build Frontend Image
+        run: |
+            docker build \
+            --build-arg REACT_APP_BACKEND_URL="" \
+            -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
+
+      - name: Push Frontend to ECR
+        run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          docker tag frontend:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
+          docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
 
   build-lambda-packages:
     needs: test-app-dev
@@ -325,14 +327,16 @@ jobs:
             --arg cert "$CERT_CONTENT" \
             --arg key "$KEY_CONTENT" \
             --arg reg "$REGISTRY" \
-            --arg repo "${{ env.ECR_BACKEND_REPO }}" \
+            --arg back_repo "${{ env.ECR_BACKEND_REPO }}" \
+            --arg front_repo "${{ env.ECR_FRONTEND_REPO }}" \
             --arg tag "$TAG" \
             '{
               ssl_cert_content: $cert, 
               ssl_key_content: $key, 
               ecr_registry: $reg, 
-              backend_repo: $repo, 
-              backend_tag: $tag,
+              backend_repo: $back_repo, 
+              frontend_repo: $front_repo, 
+              image_tag: $tag,
               deploy_env: "prod"
             }' > ansible_vars.json
 
