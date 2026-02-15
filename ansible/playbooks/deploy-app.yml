@@ -256,8 +256,11 @@
         state: started
       changed_when: false
 
-    - name: Force NGINX reload before health check
-      meta: flush_handlers
+    - name: Force NGINX restart to ensure SSL listener is active
+      systemd:
+        name: nginx
+        state: restarted
+        enabled: yes
 
     - name: Check application health via NGINX (HTTPS)
       uri:
