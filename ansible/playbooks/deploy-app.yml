@@ -193,7 +193,7 @@
         state: started
         restart_policy: always
         ports:
-          - "127.0.0.1:3000:3000"
+          - "127.0.0.1:3000:80"
         networks:
           - name: app-network
 

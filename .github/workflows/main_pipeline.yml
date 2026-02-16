@@ -177,6 +177,7 @@ jobs:
       - name: Build Frontend Image
         run: |
             docker build \
+            -f ./frontend-react-js/Dockerfile.prod \
             --build-arg REACT_APP_BACKEND_URL="" \
             -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
 
