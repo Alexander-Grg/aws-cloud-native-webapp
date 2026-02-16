@@ -179,6 +179,10 @@ jobs:
             docker build \
             -f ./frontend-react-js/Dockerfile.prod \
             --build-arg REACT_APP_BACKEND_URL="" \
+            --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
+            --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
+            --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ secrets.AWS_COGNITO_USER_POOL_ID }}" \
+            --build-arg REACT_APP_CLIENT_ID="${{ secrets.AWS_COGNITO_USER_POOL_CLIENT_ID }}" \
             -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
 
       - name: Push Frontend to ECR
