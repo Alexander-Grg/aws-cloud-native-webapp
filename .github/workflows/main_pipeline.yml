@@ -13,6 +13,7 @@ env:
   AWS_REGION: ap-southeast-2
   ECR_BACKEND_REPO: backend-flask
   ECR_FRONTEND_REPO: frontend-react-js
+  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
   TF_CLOUD_ORGANIZATION: 'westlaw_personal'
 
 jobs:
@@ -64,24 +65,6 @@ jobs:
         if: always()
         run: docker compose down -v
 
-  create-ecr:
-    needs: test-app-dev
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Create Repositories
-        run: |
-          for repo in ${{ env.ECR_BACKEND_REPO }} ${{ env.ECR_FRONTEND_REPO }}; do
-            aws ecr describe-repositories --repository-names $repo || aws ecr create-repository --repository-name $repo
-          done
-
   build-lambda-packages:
     needs: test-app-dev
     runs-on: ubuntu-latest
@@ -110,8 +93,6 @@ jobs:
     defaults:
       run:
         working-directory: ./terraform
-    env:
-      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Download Lambda packages
@@ -128,14 +109,30 @@ jobs:
           terraform init
           terraform apply -auto-approve
 
+  create-ecr:
+    needs: test-app-dev
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Create Repositories
+        run: |
+          for repo in ${{ env.ECR_BACKEND_REPO }} ${{ env.ECR_FRONTEND_REPO }}; do
+            aws ecr describe-repositories --repository-names $repo || aws ecr create-repository --repository-name $repo
+          done
+
   build-and-scan:
     needs: [test-app-dev, create-ecr, manage-infra]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       docker_tag: ${{ steps.vars.outputs.tag }}
-    env:
-      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS Credentials
@@ -150,32 +147,33 @@ jobs:
       - name: Generate Tag
         id: vars
         run: echo "tag=$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-
+      
       - name: Setup Terraform for ID extraction
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
+      
       - name: Extract Live Cognito IDs
         working-directory: ./terraform
         run: |
           terraform init
           echo "COGNITO_USER_POOL_ID=$(terraform output -raw user_pool_id)" >> $GITHUB_ENV
           echo "COGNITO_CLIENT_ID=$(terraform output -raw client_id)" >> $GITHUB_ENV
-
+      
       - name: Build Backend Image
         run: docker build -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
       
-      - name: Build Frontend Image (With Live IDs)
+      - name: Build Frontend Image (With Fresh IDs)
         run: |
-          docker build \
-          -f ./frontend-react-js/Dockerfile.prod \
-          --build-arg REACT_APP_BACKEND_URL="" \
-          --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
-          --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
-          --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ env.COGNITO_USER_POOL_ID }}" \
-          --build-arg REACT_APP_CLIENT_ID="${{ env.COGNITO_CLIENT_ID }}" \
-          -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
-
+            docker build \
+            -f ./frontend-react-js/Dockerfile.prod \
+            --build-arg REACT_APP_BACKEND_URL="" \
+            --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
+            --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
+            --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ env.COGNITO_USER_POOL_ID }}" \
+            --build-arg REACT_APP_CLIENT_ID="${{ env.COGNITO_CLIENT_ID }}" \
+            -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
+      
       - name: Push Images to ECR
         run: |
           REGISTRY="${{ steps.login-ecr.outputs.registry }}"
@@ -192,7 +190,6 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ap-southeast-2
-      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Terraform
@@ -202,16 +199,16 @@ jobs:
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
-      - name: Install Ansible & AWS dependencies
+      - name: Install Ansible & Docker Collections
         run: |
-          pip install ansible boto3 botocore
-          ansible-galaxy collection install community.aws amazon.aws
+          pip install ansible boto3 botocore requests
+          ansible-galaxy collection install community.aws amazon.aws community.docker
       - name: Create Inventory File
         run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           INSTANCE_ID=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} \
             --filters "Name=tag:Role,Values=app" "Name=instance-state-name,Values=running" \
             --query "Reservations[].Instances[].InstanceId" --output text)
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           cat <<EOF > inventory.ini
           [app_server]
           $INSTANCE_ID
@@ -221,14 +218,21 @@ jobs:
           ansible_python_interpreter=/usr/bin/python3
           ansible_aws_ssm_bucket_name=ansible-ops-$ACCOUNT_ID-${{ env.AWS_REGION }}
           EOF
+      
       - name: Deploy with Ansible
         working-directory: ./terraform
         run: |
+          # Extract Terraform Outputs
           CERT_CONTENT=$(terraform output -raw ssl_cert_pem)
           KEY_CONTENT=$(terraform output -raw ssl_key_pem)
+          COGNITO_ID=$(terraform output -raw user_pool_id)
+          COGNITO_CLIENT=$(terraform output -raw client_id)
+
           cd ..
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          
+          # Create JSON vars file
           jq -n \
             --arg cert "$CERT_CONTENT" \
             --arg key "$KEY_CONTENT" \
@@ -236,13 +240,25 @@ jobs:
             --arg back_repo "${{ env.ECR_BACKEND_REPO }}" \
             --arg front_repo "${{ env.ECR_FRONTEND_REPO }}" \
             --arg tag "${{ needs.build-and-scan.outputs.docker_tag }}" \
+            --arg aws_region "${{ env.AWS_REGION }}" \
+            --arg access_key "${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --arg secret_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --arg cognito_id "$COGNITO_ID" \
+            --arg cognito_client "$COGNITO_CLIENT" \
             '{
-              ssl_cert_content: $cert, 
-              ssl_key_content: $key, 
-              ecr_registry: $reg, 
-              backend_repo: $back_repo, 
-              frontend_repo: $front_repo, 
+              ssl_cert_content: $cert,
+              ssl_key_content: $key,
+              ecr_registry: $reg,
+              backend_repo: $back_repo,
+              frontend_repo: $front_repo,
               image_tag: $tag,
+              aws_region: $aws_region,
+              aws_access_key: $access_key,
+              aws_secret_key: $secret_key,
+              cognito_user_pool_id: $cognito_id,
+              cognito_client_id: $cognito_client,
               deploy_env: "prod"
             }' > ansible_vars.json
-          ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app.yml --extra-vars "@ansible_vars.json"
+
+          ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app-compose.yml \
+            --extra-vars "@ansible_vars.json"

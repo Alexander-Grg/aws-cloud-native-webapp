@@ -1,15 +1,12 @@
 ---
-- name: Configure and Deploy Full Stack App (Docker Compose Version)
+- name: Configure and Deploy Full Stack App
   hosts: app_server
   become: true
   gather_facts: true
   vars:
     app_dir: /opt/app
     app_user: ubuntu
-    aws_region: ap-southeast-2
     secret_name: "webapp-rds-credentials"
-    ssl_cert_content: ""
-    ssl_key_content: ""
 
   tasks:
     - name: Ensure 2GB swap file exists
@@ -64,6 +61,27 @@
         owner: "{{ app_user }}"
         mode: '0644'
 
+    - name: Create .env file for Docker Compose
+      copy:
+        dest: "{{ app_dir }}/.env"
+        owner: "{{ app_user }}"
+        mode: '0600'
+        content: |
+          ECR_REGISTRY={{ ecr_registry }}
+          ECR_BACKEND_REPO={{ backend_repo }}
+          ECR_FRONTEND_REPO={{ frontend_repo }}
+          IMAGE_TAG={{ image_tag }}
+          AWS_REGION={{ aws_region }}
+          AWS_DEFAULT_REGION={{ aws_region }}
+          AWS_ACCESS_KEY_ID={{ aws_access_key }}
+          AWS_SECRET_ACCESS_KEY={{ aws_secret_key }}
+          AWS_COGNITO_USER_POOL_ID={{ cognito_user_pool_id }}
+          AWS_COGNITO_USER_POOL_CLIENT_ID={{ cognito_client_id }}
+          CONNECTION_STRING=postgresql://{{ db_secrets.username }}:{{ db_secrets.password }}@{{ db_secrets.host }}:{{ db_secrets.port }}/{{ db_secrets.dbname }}
+          PROD_CONNECTION_STRING=postgresql://{{ db_secrets.username }}:{{ db_secrets.password }}@{{ db_secrets.host }}:{{ db_secrets.port }}/{{ db_secrets.dbname }}
+          FRONTEND_URL=https://{{ ansible_default_ipv4.address }}
+          BACKEND_URL=https://{{ ansible_default_ipv4.address }}
+
     - name: Deploy Services via Docker Compose
       community.docker.docker_compose_v2:
         project_src: "{{ app_dir }}"
@@ -84,8 +102,19 @@
               ssl_certificate     /etc/nginx/ssl/server.crt;
               ssl_certificate_key /etc/nginx/ssl/server.key;
               
-              location /api/ { proxy_pass http://127.0.0.1:4567; }
-              location / { proxy_pass http://127.0.0.1:3000; }
+              # Proxy API to Flask
+              location /api/ { 
+                  proxy_pass http://127.0.0.1:4567;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+              }
+              
+              # Proxy Main to React (Nginx Container)
+              location / { 
+                  proxy_pass http://127.0.0.1:3000;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+              }
           }
       notify: Reload NGINX
 

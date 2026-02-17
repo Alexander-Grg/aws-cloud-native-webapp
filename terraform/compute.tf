@@ -38,6 +38,8 @@ resource "aws_lambda_function" "webapp_post_confirmation" {
   architectures    = ["x86_64"]
   package_type     = "Zip"
 
+  layers = ["arn:aws:lambda:ap-southeast-2:898466741470:layer:psycopg2-py312:1"]
+
   environment {
     variables = {
       RDS_SECRET_ARN = aws_secretsmanager_secret.rds_credentials.arn
