@@ -20,6 +20,19 @@
         fi
       changed_when: false
 
+    - name: Remove conflicting Docker packages
+      apt:
+        name:
+          - docker.io
+          - docker-doc
+          - docker-compose
+          - docker-compose-v2
+          - podman-docker
+          - containerd
+          - runc
+        state: absent
+        purge: yes 
+
     - name: Install system dependencies for Docker
       apt:
         name:
