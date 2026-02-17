@@ -163,7 +163,7 @@ jobs:
       - name: Build Backend Image
         run: docker build -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
       
-      - name: Build Frontend Image (With Fresh IDs)
+      - name: Build Frontend Image
         run: |
             docker build \
             -f ./frontend-react-js/Dockerfile.prod \

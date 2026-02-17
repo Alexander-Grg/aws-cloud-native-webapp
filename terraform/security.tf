@@ -268,12 +268,12 @@ resource "aws_cognito_user_pool" "main" {
   username_attributes = ["email"]
   auto_verified_attributes = ["email"]
 
-  lifecycle {
-    prevent_destroy = true
-    ignore_changes = [
-      schema,
-    ]
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  #   ignore_changes = [
+  #     schema,
+  #   ]
+  # }
 
   password_policy {
     minimum_length    = 8
