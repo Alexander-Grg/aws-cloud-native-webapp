@@ -1,0 +1,105 @@
+---
+- name: Configure and Deploy Full Stack App (Docker Compose Version)
+  hosts: app_server
+  become: true
+  gather_facts: true
+  vars:
+    app_dir: /opt/app
+    app_user: ubuntu
+    aws_region: ap-southeast-2
+    secret_name: "webapp-rds-credentials"
+    ssl_cert_content: ""
+    ssl_key_content: ""
+
+  tasks:
+    - name: Ensure 2GB swap file exists
+      shell: |
+        if [ ! -f /swapfile ]; then
+          fallocate -l 2G /swapfile
+          chmod 600 /swapfile
+          mkswap /swapfile
+          swapon /swapfile
+          echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        fi
+      changed_when: false
+
+    - name: Install Docker and Compose Plugin
+      apt:
+        name: [docker.io, docker-compose-plugin, python3-docker, jq, curl, unzip]
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker is enabled
+      systemd: { name: docker, state: started, enabled: yes }
+
+    - name: Create SSL Directory
+      file: { path: /etc/nginx/ssl, state: directory, mode: '0700' }
+
+    - name: Write SSL Files
+      copy:
+        dest: "/etc/nginx/ssl/server.{{ item.ext }}"
+        content: "{{ item.content }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { ext: 'crt', content: "{{ ssl_cert_content }}", mode: '0644' }
+        - { ext: 'key', content: "{{ ssl_key_content }}", mode: '0600' }
+      notify: Reload NGINX
+
+    - name: Create App Directory
+      file: { path: "{{ app_dir }}", state: directory, owner: "{{ app_user }}" }
+
+    - name: Login to ECR
+      shell: "aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ ecr_registry }}"
+      become_user: "{{ app_user }}"
+      changed_when: false
+
+    - name: Fetch DB Credentials from AWS Secrets Manager
+      set_fact:
+        db_secrets: "{{ lookup('amazon.aws.aws_secret', secret_name, region=aws_region) | from_json }}"
+
+    - name: Template Docker Compose File
+      template:
+        src: ./docker-compose.prod.yml.j2
+        dest: "{{ app_dir }}/docker-compose.yml"
+        owner: "{{ app_user }}"
+        mode: '0644'
+
+    - name: Deploy Services via Docker Compose
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        state: present
+        pull: always
+      become_user: "{{ app_user }}"
+
+    - name: Configure NGINX Reverse Proxy
+      copy:
+        dest: /etc/nginx/sites-available/webapp
+        content: |
+          server {
+              listen 80;
+              return 301 https://$host$request_uri;
+          }
+          server {
+              listen 443 ssl;
+              ssl_certificate     /etc/nginx/ssl/server.crt;
+              ssl_certificate_key /etc/nginx/ssl/server.key;
+              
+              location /api/ { proxy_pass http://127.0.0.1:4567; }
+              location / { proxy_pass http://127.0.0.1:3000; }
+          }
+      notify: Reload NGINX
+
+    - name: Enable Site and Remove Defaults
+      file:
+        src: /etc/nginx/sites-available/webapp
+        dest: /etc/nginx/sites-enabled/webapp
+        state: link
+      notify: Reload NGINX
+
+    - name: Remove default Nginx site
+      file: { path: /etc/nginx/sites-enabled/default, state: absent }
+      notify: Reload NGINX
+
+  handlers:
+    - name: Reload NGINX
+      service: { name: nginx, state: reloaded }

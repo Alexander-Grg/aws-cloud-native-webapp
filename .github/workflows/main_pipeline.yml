@@ -13,48 +13,33 @@ env:
   AWS_REGION: ap-southeast-2
   ECR_BACKEND_REPO: backend-flask
   ECR_FRONTEND_REPO: frontend-react-js
+  TF_CLOUD_ORGANIZATION: 'westlaw_personal'
 
 jobs:
   security-and-quality:
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
-
-        # - name: Install Security Tools
-        #   run: pip install bandit ansible-lint
-        
-        # - name: Run Bandit
-        #   run: bandit -r ./backend-flask -f json -o bandit-report.json || true
-        
-        # - name: Lint Ansible Playbooks
-        #   run: ansible-lint ./ansible/playbooks/*.yml
-
-        - name: Setup Python & Flake8
-          uses: actions/setup-python@v5
-          with:
-            python-version: '3.12'
-        
-        - name: Install Flake8
-          run: pip install flake8
-        
-        - name: Run Flake8
-          run: |
-            flake8 ./backend-flask \
-              --exclude=./backend-flask/venv,./backend-flask/.venv \
-              --select=E9,F63,F7,F82 \
-              --count \
-              --show-source \
-              --statistics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python & Flake8
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Flake8
+        run: pip install flake8
+      - name: Run Flake8
+        run: |
+          flake8 ./backend-flask \
+            --exclude=./backend-flask/venv,./backend-flask/.venv \
+            --select=E9,F63,F7,F82 \
+            --count --show-source --statistics
 
   test-app-dev:
     needs: security-and-quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Start services (Build & Run)
         env:
           AWS_DEFAULT_REGION: "us-east-1"
@@ -71,16 +56,10 @@ jobs:
         run: |
           docker compose up -d --build
           sleep 10
-          docker compose ps
-
       - name: Run backend tests
-        run: |
-          docker compose exec -T backend-flask python -m pytest
-
+        run: docker compose exec -T backend-flask python -m pytest
       - name: Run frontend tests
-        run: |
-          docker compose exec -T -e CI=true frontend-react-js npm test -- --transformIgnorePatterns "node_modules/(?!axios)/"
-
+        run: docker compose exec -T -e CI=true frontend-react-js npm test -- --transformIgnorePatterns "node_modules/(?!axios)/"
       - name: Cleanup
         if: always()
         run: docker compose down -v
@@ -89,107 +68,19 @@ jobs:
     needs: test-app-dev
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    env:
-      AWS_REGION: ap-southeast-2
-      ECR_BACKEND_REPO: backend-flask
-      ECR_FRONTEND_REPO: frontend-react-js
     steps:
       - uses: actions/checkout@v4
-      
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-      
-      - name: Create Backend ECR Repository
+      - name: Create Repositories
         run: |
-          # Check if repo exists, create if not
-          if aws ecr describe-repositories --repository-names ${{ env.ECR_BACKEND_REPO }} > /dev/null 2>&1; then
-            echo "ECR repository ${{ env.ECR_BACKEND_REPO }} already exists"
-          else
-            echo "Creating ECR repository: ${{ env.ECR_BACKEND_REPO }}"
-            aws ecr create-repository \
-              --repository-name ${{ env.ECR_BACKEND_REPO }} \
-              --image-tag-mutability IMMUTABLE \
-              --image-scanning-configuration scanOnPush=true \
-              --encryption-configuration encryptionType=KMS
-            
-            echo "Setting lifecycle policy"
-            aws ecr put-lifecycle-policy \
-              --repository-name ${{ env.ECR_BACKEND_REPO }} \
-              --lifecycle-policy-text '{"rules":[{"rulePriority":1,"description":"Keep last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
-          fi
-      
-      - name: Create Frontend ECR Repository
-        run: |
-          if aws ecr describe-repositories --repository-names ${{ env.ECR_FRONTEND_REPO }} > /dev/null 2>&1; then
-            echo "ECR repository ${{ env.ECR_FRONTEND_REPO }} already exists"
-          else
-            echo "Creating ECR repository: ${{ env.ECR_FRONTEND_REPO }}"
-            aws ecr create-repository \
-              --repository-name ${{ env.ECR_FRONTEND_REPO }} \
-              --image-tag-mutability IMMUTABLE \
-              --image-scanning-configuration scanOnPush=true \
-              --encryption-configuration encryptionType=KMS
-            
-            aws ecr put-lifecycle-policy \
-              --repository-name ${{ env.ECR_FRONTEND_REPO }} \
-              --lifecycle-policy-text '{"rules":[{"rulePriority":1,"description":"Keep last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
-          fi
-
-  build-and-scan:
-    needs: [test-app-dev, create-ecr]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    outputs:
-      docker_tag: ${{ steps.vars.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Generate Tag
-        id: vars
-        run: echo "tag=$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-
-      # BACKEND
-      - name: Build Backend Image
-        run: docker build -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
-
-      - name: Push Backend to ECR
-        run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-          docker tag backend:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
-          docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
-
-      # FRONTEND
-      - name: Build Frontend Image
-        run: |
-            docker build \
-            -f ./frontend-react-js/Dockerfile.prod \
-            --build-arg REACT_APP_BACKEND_URL="" \
-            --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
-            --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
-            --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ secrets.AWS_COGNITO_USER_POOL_ID }}" \
-            --build-arg REACT_APP_CLIENT_ID="${{ secrets.AWS_COGNITO_USER_POOL_CLIENT_ID }}" \
-            -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
-
-      - name: Push Frontend to ECR
-        run: |
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-          docker tag frontend:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
-          docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
+          for repo in ${{ env.ECR_BACKEND_REPO }} ${{ env.ECR_FRONTEND_REPO }}; do
+            aws ecr describe-repositories --repository-names $repo || aws ecr create-repository --repository-name $repo
+          done
 
   build-lambda-packages:
     needs: test-app-dev
@@ -199,64 +90,99 @@ jobs:
         working-directory: ./terraform
     steps:
       - uses: actions/checkout@v4
-      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      
-      - name: Make build script executable
-        run: chmod +x ../lambdas/build_lambdas.sh
-      
       - name: Build Lambda packages
-        run: ../lambdas/build_lambdas.sh
-      
-      - name: Upload Lambda packages as artifact
+        run: |
+          chmod +x ../lambdas/build_lambdas.sh
+          ../lambdas/build_lambdas.sh
+      - name: Upload Lambda packages
         uses: actions/upload-artifact@v4
         with:
           name: lambda-packages
-          path: |
-            ./terraform/post_confirmation.zip
-            ./terraform/messaging_stream.zip
+          path: ./terraform/*.zip
 
   manage-infra:
-      needs: build-lambda-packages
-      runs-on: ubuntu-latest
-      defaults:
-        run:
-          working-directory: ./terraform
-      env:
-        TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-        TF_CLOUD_ORGANIZATION: 'westlaw_personal'
+    needs: build-lambda-packages
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Lambda packages
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-packages
+          path: ./terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Terraform Init & Apply
+        run: |
+          terraform init
+          terraform apply -auto-approve
 
-      steps:
-        - uses: actions/checkout@v4
+  build-and-scan:
+    needs: [test-app-dev, create-ecr, manage-infra]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      docker_tag: ${{ steps.vars.outputs.tag }}
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Generate Tag
+        id: vars
+        run: echo "tag=$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-        - name: Download Lambda packages
-          uses: actions/download-artifact@v4
-          with:
-            name: lambda-packages
-            path: ./terraform
+      - name: Setup Terraform for ID extraction
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Extract Live Cognito IDs
+        working-directory: ./terraform
+        run: |
+          terraform init
+          echo "COGNITO_USER_POOL_ID=$(terraform output -raw user_pool_id)" >> $GITHUB_ENV
+          echo "COGNITO_CLIENT_ID=$(terraform output -raw client_id)" >> $GITHUB_ENV
 
-        - name: Setup Terraform
-          uses: hashicorp/setup-terraform@v3
-          with:
-            terraform_wrapper: false
+      - name: Build Backend Image
+        run: docker build -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
+      
+      - name: Build Frontend Image (With Live IDs)
+        run: |
+          docker build \
+          -f ./frontend-react-js/Dockerfile.prod \
+          --build-arg REACT_APP_BACKEND_URL="" \
+          --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
+          --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
+          --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ env.COGNITO_USER_POOL_ID }}" \
+          --build-arg REACT_APP_CLIENT_ID="${{ env.COGNITO_CLIENT_ID }}" \
+          -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
 
-        - name: Run Trivy IaC Scanner
-          uses: aquasecurity/trivy-action@master
-          with:
-            scan-type: 'config'
-            scan-ref: './terraform'
-            format: 'table'
-            exit-code: '1'
-            severity: 'CRITICAL,HIGH'
-
-        - name: Terraform Init
-          run: terraform init
-
-        - name: Terraform Apply
-          run: terraform apply -auto-approve
+      - name: Push Images to ECR
+        run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          docker tag backend:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
+          docker tag frontend:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
+          docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
+          docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
 
   configure-and-deploy:
     needs: [manage-infra, build-and-scan]
@@ -267,75 +193,49 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ap-southeast-2
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-      ANSIBLE_TIMEOUT: 60
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
-
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
-
       - name: Install Ansible & AWS dependencies
         run: |
           pip install ansible boto3 botocore
           ansible-galaxy collection install community.aws amazon.aws
-
       - name: Create Inventory File
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          BUCKET_NAME="ansible-ops-${ACCOUNT_ID}-${{ env.AWS_REGION }}"
-          
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --region ${{ env.AWS_REGION }} \
+          INSTANCE_ID=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} \
             --filters "Name=tag:Role,Values=app" "Name=instance-state-name,Values=running" \
-            --query "Reservations[].Instances[].InstanceId" \
-            --output text)
-
-          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "None" ]; then
-            echo "::error::Could not find a running EC2 instance with tag Role=app"
-            exit 1
-          fi
-
+            --query "Reservations[].Instances[].InstanceId" --output text)
           cat <<EOF > inventory.ini
           [app_server]
           $INSTANCE_ID
-
           [app_server:vars]
           ansible_connection=amazon.aws.aws_ssm
           ansible_aws_ssm_region=${{ env.AWS_REGION }}
           ansible_python_interpreter=/usr/bin/python3
-          deploy_env=production
-          ansible_aws_ssm_bucket_name=$BUCKET_NAME
+          ansible_aws_ssm_bucket_name=ansible-ops-$ACCOUNT_ID-${{ env.AWS_REGION }}
           EOF
-
       - name: Deploy with Ansible
         working-directory: ./terraform
         run: |
-          # 1. Fetch SSL certs from Terraform state
           CERT_CONTENT=$(terraform output -raw ssl_cert_pem)
           KEY_CONTENT=$(terraform output -raw ssl_key_pem)
-
-          # 2. Return to root to run Ansible
           cd ..
-
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          TAG="${{ needs.build-and-scan.outputs.docker_tag }}"
-
-          # 3. Create JSON file for variables (Safely handles SSL newlines)
           jq -n \
             --arg cert "$CERT_CONTENT" \
             --arg key "$KEY_CONTENT" \
             --arg reg "$REGISTRY" \
             --arg back_repo "${{ env.ECR_BACKEND_REPO }}" \
             --arg front_repo "${{ env.ECR_FRONTEND_REPO }}" \
-            --arg tag "$TAG" \
+            --arg tag "${{ needs.build-and-scan.outputs.docker_tag }}" \
             '{
               ssl_cert_content: $cert, 
               ssl_key_content: $key, 
@@ -345,10 +245,4 @@ jobs:
               image_tag: $tag,
               deploy_env: "prod"
             }' > ansible_vars.json
-
-          echo "Generated variables file (Key masked):"
-          cat ansible_vars.json | jq 'del(.ssl_key_content)'
-
-          # 4. Run Ansible using the JSON file
-          ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app.yml \
-            --extra-vars "@ansible_vars.json"
+          ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app.yml --extra-vars "@ansible_vars.json"

@@ -1,0 +1,232 @@
+# name: CI/CD Pipeline
+# on:
+#   push:
+#     branches: [main, develop]
+#   pull_request:
+#     branches: [main]
+# env:
+#   NODE_ENV: test
+#   DOCKER_BUILDKIT: 1
+#   COMPOSE_DOCKER_CLI_BUILD: 1
+#   AWS_REGION: ap-southeast-2
+#   ECR_BACKEND_REPO: backend-flask
+#   ECR_FRONTEND_REPO: frontend-react-js
+#   TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+#   TF_CLOUD_ORGANIZATION: 'westlaw_personal'
+# jobs:
+#   security-and-quality:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Setup Python & Flake8
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.12'
+#       - name: Install Flake8
+#         run: pip install flake8
+#       - name: Run Flake8
+#         run: |
+#           flake8 ./backend-flask \
+#             --exclude=./backend-flask/venv,./backend-flask/.venv \
+#             --select=E9,F63,F7,F82 \
+#             --count --show-source --statistics
+#   test-app-dev:
+#     needs: security-and-quality
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Setup Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+#       - name: Start services (Build & Run)
+#         env:
+#           AWS_DEFAULT_REGION: "us-east-1"
+#           AWS_ACCESS_KEY_ID: "testing"
+#           AWS_SECRET_ACCESS_KEY: "testing"
+#           AWS_COGNITO_USER_POOL_ID: "us-east-1_xxxx"
+#           AWS_COGNITO_USER_POOL_CLIENT_ID: "testing"
+#           CONNECTION_STRING: "postgresql://postgres:password@db:5432/webapp"
+#           PROD_CONNECTION_STRING: "postgresql://postgres:password@db:5432/webapp"
+#           FRONTEND_URL: "http://localhost:3000"
+#           BACKEND_URL: "http://localhost:4567"
+#           PG_DATABASE: "webapp"
+#           PG_PASSWORD: "password"
+#         run: |
+#           docker compose up -d --build
+#           sleep 10
+#       - name: Run backend tests
+#         run: docker compose exec -T backend-flask python -m pytest
+#       - name: Run frontend tests
+#         run: docker compose exec -T -e CI=true frontend-react-js npm test -- --transformIgnorePatterns "node_modules/(?!axios)/"
+#       - name: Cleanup
+#         if: always()
+#         run: docker compose down -v
+#   build-lambda-packages:
+#     needs: test-app-dev
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         working-directory: ./terraform
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Setup Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.12'
+#       - name: Build Lambda packages
+#         run: |
+#           chmod +x ../lambdas/build_lambdas.sh
+#           ../lambdas/build_lambdas.sh
+#       - name: Upload Lambda packages
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: lambda-packages
+#           path: ./terraform/*.zip
+#   manage-infra:
+#     needs: build-lambda-packages
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         working-directory: ./terraform
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Download Lambda packages
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: lambda-packages
+#           path: ./terraform
+#       - name: Setup Terraform
+#         uses: hashicorp/setup-terraform@v3
+#         with:
+#           terraform_wrapper: false
+#       - name: Terraform Init & Apply
+#         run: |
+#           terraform init
+#           terraform apply -auto-approve
+#   create-ecr:
+#     needs: test-app-dev
+#     if: github.ref == 'refs/heads/main'
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Configure AWS Credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_REGION }}
+#       - name: Create Repositories
+#         run: |
+#           for repo in ${{ env.ECR_BACKEND_REPO }} ${{ env.ECR_FRONTEND_REPO }}; do
+#             aws ecr describe-repositories --repository-names $repo || aws ecr create-repository --repository-name $repo
+#           done
+#   build-and-scan:
+#     needs: [test-app-dev, create-ecr, manage-infra]
+#     if: github.ref == 'refs/heads/main'
+#     runs-on: ubuntu-latest
+#     outputs:
+#       docker_tag: ${{ steps.vars.outputs.tag }}
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Configure AWS Credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_REGION }}
+#       - name: Login to Amazon ECR
+#         id: login-ecr
+#         uses: aws-actions/amazon-ecr-login@v2
+#       - name: Generate Tag
+#         id: vars
+#         run: echo "tag=$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+#       - name: Setup Terraform for ID extraction
+#         uses: hashicorp/setup-terraform@v3
+#         with:
+#           terraform_wrapper: false
+#       - name: Extract Live Cognito IDs
+#         working-directory: ./terraform
+#         run: |
+#           terraform init
+#           echo "COGNITO_USER_POOL_ID=$(terraform output -raw user_pool_id)" >> $GITHUB_ENV
+#           echo "COGNITO_CLIENT_ID=$(terraform output -raw client_id)" >> $GITHUB_ENV
+#       - name: Build Backend Image
+#         run: docker build -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
+#       - name: Build Frontend Image (With Fresh IDs)
+#         run: |
+#             docker build \
+#             -f ./frontend-react-js/Dockerfile.prod \
+#             --build-arg REACT_APP_BACKEND_URL="" \
+#             --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
+#             --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
+#             --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ env.COGNITO_USER_POOL_ID }}" \
+#             --build-arg REACT_APP_CLIENT_ID="${{ env.COGNITO_CLIENT_ID }}" \
+#             -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
+#       - name: Push Images to ECR
+#         run: |
+#           REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+#           docker tag backend:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
+#           docker tag frontend:${{ steps.vars.outputs.tag }} $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
+#           docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
+#           docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
+#   configure-and-deploy:
+#     needs: [manage-infra, build-and-scan]
+#     if: github.ref == 'refs/heads/main'
+#     runs-on: ubuntu-latest
+#     env:
+#       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#       AWS_REGION: ap-southeast-2
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Setup Terraform (for SSL output)
+#         uses: hashicorp/setup-terraform@v3
+#         with:
+#           terraform_wrapper: false
+#       - name: Terraform Init
+#         working-directory: ./terraform
+#         run: terraform init
+#       - name: Install Ansible & Docker Collections
+#         run: |
+#           pip install ansible boto3 botocore requests
+#           ansible-galaxy collection install community.aws amazon.aws community.docker
+#       - name: Create Inventory File
+#         run: |
+#           INSTANCE_ID=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} \
+#             --filters "Name=tag:Role,Values=app" "Name=instance-state-name,Values=running" \
+#             --query "Reservations[].Instances[].InstanceId" --output text)
+#           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+#           cat <<EOF > inventory.ini
+#           [app_server]
+#           $INSTANCE_ID
+#           [app_server:vars]
+#           ansible_connection=amazon.aws.aws_ssm
+#           ansible_aws_ssm_region=${{ env.AWS_REGION }}
+#           ansible_python_interpreter=/usr/bin/python3
+#           ansible_aws_ssm_bucket_name=ansible-ops-$ACCOUNT_ID-${{ env.AWS_REGION }}
+#           EOF
+#       - name: Deploy with Ansible (Docker Compose Mode)
+#         working-directory: ./terraform
+#         run: |
+#           CERT_CONTENT=$(terraform output -raw ssl_cert_pem)
+#           KEY_CONTENT=$(terraform output -raw ssl_key_pem)
+#           cd ..
+#           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+#           REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+#           jq -n \
+#             --arg cert "$CERT_CONTENT" \
+#             --arg key "$KEY_CONTENT" \
+#             --arg reg "$REGISTRY" \
+#             --arg back_repo "${{ env.ECR_BACKEND_REPO }}" \
+#             --arg front_repo "${{ env.ECR_FRONTEND_REPO }}" \
+#             --arg tag "${{ needs.build-and-scan.outputs.docker_tag }}" \
+#             '{
+#               ssl_cert_content: $cert,
+#               ssl_key_content: $key,
+#               ecr_registry: $reg,
+#               backend_repo: $back_repo,
+#               frontend_repo: $front_repo,
+#               image_tag: $tag,
+#               deploy_env: "prod"
+#             }' > ansible_vars.json
+#           ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app-compose.yml \
+#             --extra-vars "@ansible_vars.json"
