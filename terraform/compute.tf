@@ -27,11 +27,11 @@ resource "aws_cloudwatch_log_group" "lambda_post_confirmation_logs" {
 
 # Post Confirmation Lambda Function
 resource "aws_lambda_function" "webapp_post_confirmation" {
-  filename         = data.archive_file.post_confirmation_zip.output_path
-  source_code_hash = data.archive_file.post_confirmation_zip.output_base64sha256
+  filename         = "${path.module}/../post_confirmation.zip"
+  source_code_hash = filebase64sha256("${path.module}/../post_confirmation.zip")
   function_name    = var.function_name_lambda_post_confirmation
   role             = aws_iam_role.webapp_post_confirmation_role.arn
-  handler          = local.post_confirmation_handler
+  handler          = "post_confirmation.lambda_handler"
   runtime          = "python3.12"
   timeout          = 10
   memory_size      = 128
@@ -41,6 +41,7 @@ resource "aws_lambda_function" "webapp_post_confirmation" {
   environment {
     variables = {
       RDS_SECRET_ARN = aws_secretsmanager_secret.rds_credentials.arn
+      PROD_CONNECTION_STRING = "postgresql://${aws_db_instance.webapp_rds_instance.username}:${var.db_password}@${aws_db_instance.webapp_rds_instance.address}:${aws_db_instance.webapp_rds_instance.port}/${aws_db_instance.webapp_rds_instance.db_name}"
     }
   }
 
