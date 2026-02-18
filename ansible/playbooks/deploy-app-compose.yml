@@ -8,6 +8,15 @@
     app_user: ubuntu
     secret_name: "webapp-rds-credentials"
 
+# passed in the pipeline ansible_vars.json
+    ssl_cert_content: ""
+    ssl_key_content: ""
+    ecr_registry: ""
+    backend_repo: ""
+    frontend_repo: ""
+    image_tag: ""
+    aws_region: "ap-southeast-2"
+
   tasks:
     - name: Ensure 2GB swap file exists
       shell: |
@@ -20,20 +29,12 @@
         fi
       changed_when: false
 
-    - name: Remove conflicting Docker packages
+    - name: Update apt cache
       apt:
-        name:
-          - docker.io
-          - docker-doc
-          - docker-compose
-          - docker-compose-v2
-          - podman-docker
-          - containerd
-          - runc
-        state: absent
-        purge: yes 
+        update_cache: yes
+        cache_valid_time: 3600
 
-    - name: Install system dependencies for Docker
+    - name: Install system dependencies (Merges previous tools + Dockerreqs)
       apt:
         name:
           - ca-certificates
@@ -44,9 +45,25 @@
           - python3-docker
           - jq
           - unzip
-          - acl
+          - acl 
         state: present
-        update_cache: yes
+
+    - name: Install AWS CLI v2
+      block:
+        - name: Check if AWS CLI is installed
+          command: aws --version
+          register: aws_cli_check
+          ignore_errors: true
+          changed_when: false
+        
+        - name: Download and Install AWS CLI
+          shell: |
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -o awscliv2.zip
+            ./aws/install --update
+          args:
+            chdir: /tmp
+          when: aws_cli_check.rc != 0
 
     - name: Add Docker's official GPG key
       apt_key:
@@ -67,10 +84,18 @@
           - docker-buildx-plugin
           - docker-compose-plugin
         state: present
-        update_cache: yes
 
     - name: Ensure Docker is enabled
       systemd: { name: docker, state: started, enabled: yes }
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Install NGINX
+      apt: { name: nginx, state: present }
 
     - name: Create SSL Directory
       file: { path: /etc/nginx/ssl, state: directory, mode: '0700' }
@@ -99,7 +124,7 @@
 
     - name: Template Docker Compose File
       template:
-        src: templates/docker-compose.prod.yml.j2
+        src: templates/docker-compose.prod.yml.j2 
         dest: "{{ app_dir }}/docker-compose.yml"
         owner: "{{ app_user }}"
         mode: '0644'
@@ -116,10 +141,6 @@
           IMAGE_TAG={{ image_tag }}
           AWS_REGION={{ aws_region }}
           AWS_DEFAULT_REGION={{ aws_region }}
-          AWS_ACCESS_KEY_ID={{ aws_access_key }}
-          AWS_SECRET_ACCESS_KEY={{ aws_secret_key }}
-          AWS_COGNITO_USER_POOL_ID={{ cognito_user_pool_id }}
-          AWS_COGNITO_USER_POOL_CLIENT_ID={{ cognito_client_id }}
           CONNECTION_STRING=postgresql://{{ db_secrets.username }}:{{ db_secrets.password }}@{{ db_secrets.host }}:{{ db_secrets.port }}/{{ db_secrets.dbname }}
           PROD_CONNECTION_STRING=postgresql://{{ db_secrets.username }}:{{ db_secrets.password }}@{{ db_secrets.host }}:{{ db_secrets.port }}/{{ db_secrets.dbname }}
           FRONTEND_URL=https://{{ ansible_default_ipv4.address }}
