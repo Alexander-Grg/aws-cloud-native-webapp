@@ -1,63 +1,47 @@
 # RDS Database Instance - webapp-rds-instance
+# tfsec:ignore:aws-rds-enable-iam-authentication
 resource "aws_db_instance" "webapp_rds_instance" {
-  # Basic Configuration
   identifier     = "webapp-rds-instance"
   engine         = "postgres"
   engine_version = "17.6"
   instance_class = "db.t3.micro"
 
-  # Database Configuration
   db_name  = "webapp"
   username = "root"
   password = var.db_password
   port     = 5432
 
-  # Storage Configuration
+  # iam_database_authentication_enabled = true
+
   allocated_storage = 20
-  storage_type      = "gp2"
+  storage_type      = "gp3" 
   storage_encrypted = true
+  publicly_accessible  = false
 
-  # Network & Security
-  vpc_security_group_ids = [aws_security_group.ssh_only.id]
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
   db_subnet_group_name   = aws_db_subnet_group.webapp_db_subnet_group.name
-  availability_zone      = "ap-southeast-2a"
-  publicly_accessible    = true
-  network_type           = "IPV4"
+  
+  # Ignore for tfsec, because backup retention is out of the FREE AWS Tier.
+  # tfsec:ignore:aws-rds-specify-backup-retention
+  # backup_retention_period = 7
+    # For production env should be false
+  skip_final_snapshot     = true
+    # For production env should be true
+  deletion_protection     = false 
 
-  # Backup Configuration
-  backup_retention_period = 0
-  backup_window           = "16:55-17:25"
-  backup_target           = "region"
-  copy_tags_to_snapshot   = false
-
-  # Maintenance Configuration
-  maintenance_window         = "Sun:14:15-Sun:14:45"
-  auto_minor_version_upgrade = true
-  deletion_protection        = false
-
-  # Parameter and Option Groups
-  parameter_group_name = "default.postgres17"
-  option_group_name    = "default:postgres-17"
-
-  # Monitoring & Performance
-  monitoring_interval                   = 0
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
+  performance_insights_kms_key_id       = aws_kms_key.rds_pi_key.arn
 
-  # Additional Configuration
-  multi_az           = false
-  license_model      = "postgresql-license"
-  ca_cert_identifier = "rds-ca-rsa2048-g1"
+  # Essential for Postgres health
+  monitoring_interval = 60
+  monitoring_role_arn = aws_iam_role.rds_monitoring_role.arn
 
-  # Authentication
-  iam_database_authentication_enabled = false
-
-  skip_final_snapshot = true
-
-  tags = {
-    Name        = "webapp-rds-instance"
-    Environment = "development"
-  }
+tags = {
+  Name        = "webapp-rds-instance"
+  Role        = "db"
+  Environment = var.environment
+}
 }
 
 # Output the database endpoint
@@ -77,7 +61,8 @@ output "db_connection_string" {
   sensitive   = true
 }
 
-# DynamoDB Table - webapp-messages
+# Dynamo DB table
+
 resource "aws_dynamodb_table" "webapp_messages" {
   name           = "webapp-messages"
   billing_mode   = "PROVISIONED"
@@ -86,7 +71,6 @@ resource "aws_dynamodb_table" "webapp_messages" {
   hash_key       = "pk"
   range_key      = "sk"
 
-  # Attribute Definitions
   attribute {
     name = "pk"
     type = "S"
@@ -102,7 +86,6 @@ resource "aws_dynamodb_table" "webapp_messages" {
     type = "S"
   }
 
-  # Global Secondary Index
   global_secondary_index {
     name            = "message-group-sk-index"
     hash_key        = "message_group_uuid"
@@ -112,26 +95,22 @@ resource "aws_dynamodb_table" "webapp_messages" {
     write_capacity  = 5
   }
 
-  # Stream Configuration
   stream_enabled   = true
   stream_view_type = "NEW_IMAGE"
 
-  # Additional Settings
-  deletion_protection_enabled = false
-
-  # Point-in-time recovery (currently disabled)
-  point_in_time_recovery {
-    enabled = false
+  server_side_encryption {
+    enabled = true 
   }
 
-  # Server-side encryption (currently disabled)
-  server_side_encryption {
-    enabled = false
+  # deletion_protection_enabled = true
+
+  point_in_time_recovery {
+    enabled = true
   }
 
   tags = {
     Name        = "webapp-messages"
-    Environment = "production"
+    Environment = var.environment
     Application = "webapp"
   }
 }
@@ -155,4 +134,83 @@ output "dynamodb_table_stream_arn" {
 output "dynamodb_table_stream_label" {
   description = "Stream label of the DynamoDB table"
   value       = aws_dynamodb_table.webapp_messages.stream_label
+}
+
+# S3 Bucket
+resource "aws_s3_bucket" "ansible_bucket" {
+  bucket        = "ansible-ops-${data.aws_caller_identity.current.account_id}-${var.default_region}"
+  force_destroy = true
+
+  tags = {
+    Name        = "Ansible Operations Bucket"
+    Environment = "Production"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "ansible_bucket_access" {
+  bucket = aws_s3_bucket.ansible_bucket.id
+
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "ansible_bucket_crypto" {
+  bucket = aws_s3_bucket.ansible_bucket.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.ansible_key.arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "ansible_bucket_cleanup" {
+  bucket = aws_s3_bucket.ansible_bucket.id
+
+  rule {
+    id     = "expire-temp-files"
+    status = "Enabled"
+
+    expiration {
+      days = 1
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "ansible_s3_access" {
+  name = "ansible_s3_transfer_policy"
+  role = aws_iam_role.ec2_ssm_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowS3Access"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.ansible_bucket.arn,
+          "${aws_s3_bucket.ansible_bucket.arn}/*"
+        ]
+      },
+      {
+        Sid    = "AllowKMSDecryption"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = [
+          aws_kms_key.ansible_key.arn
+        ]
+      }
+    ]
+  })
 }

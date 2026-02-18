@@ -1,5 +1,6 @@
 resource "aws_sns_topic" "cloudwatch_alerts" {
   name = "${var.project_name}-cloudwatch-alerts"
+  kms_master_key_id = aws_kms_key.sns_encryption_key.id
 
   tags = {
     Environment = var.environment
@@ -136,8 +137,22 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_write_throttled_events" {
 }
 
 # Billing Alarms
+#trivy:ignore:AVD-AWS-0136
+resource "aws_sns_topic" "billing_alerts_topic" {
+  provider = aws.us_east_1
+  name     = "${var.project_name}-billing-alerts-topic"
+  kms_master_key_id = "alias/aws/sns"
+}
+
+resource "aws_sns_topic_subscription" "billing_email_subscription" {
+  provider  = aws.us_east_1
+  topic_arn = aws_sns_topic.billing_alerts_topic.arn
+  protocol  = "email"
+  endpoint  = var.alarm_email 
+}
+
 resource "aws_cloudwatch_metric_alarm" "billing_alarm" {
-  provider            = aws.south
+  provider            = aws.us_east_1
   alarm_name          = "${var.project_name}-billing-alarm"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
@@ -147,7 +162,8 @@ resource "aws_cloudwatch_metric_alarm" "billing_alarm" {
   statistic           = "Maximum"
   threshold           = "1"
   alarm_description   = "This metric monitors estimated charges"
-  alarm_actions       = [aws_sns_topic.cloudwatch_alerts.arn]
+  
+  alarm_actions       = [aws_sns_topic.billing_alerts_topic.arn]
 
   dimensions = {
     Currency = "USD"
@@ -180,7 +196,7 @@ resource "aws_cloudwatch_dashboard" "main_dashboard" {
           ]
           view    = "timeSeries"
           stacked = false
-          region  = "ap-southeast-1"
+          region  = data.aws_region.current.name
           title   = "RDS Metrics"
           period  = 300
         }
@@ -201,7 +217,7 @@ resource "aws_cloudwatch_dashboard" "main_dashboard" {
           ]
           view    = "timeSeries"
           stacked = false
-          region  = "ap-southeast-1"
+          region  = data.aws_region.current.name
           title   = "DynamoDB Metrics"
           period  = 300
         }
@@ -210,7 +226,7 @@ resource "aws_cloudwatch_dashboard" "main_dashboard" {
   })
 }
 
-# Custom Metric Filter (example for application logs)
+# Custom Metric Filter
 resource "aws_cloudwatch_log_metric_filter" "error_count" {
   name           = "${var.project_name}-error-count"
   log_group_name = aws_cloudwatch_log_group.webapp_fargate_cluster_managed.name
@@ -242,12 +258,6 @@ resource "aws_cloudwatch_metric_alarm" "application_errors" {
   }
 }
 
-# Provider configuration for multi-region resources
-provider "aws" {
-  alias  = "south"
-  region = "ap-southeast-2"
-}
-
 # Outputs
 output "sns_topic_arn" {
   description = "ARN of the SNS topic for CloudWatch alerts"
@@ -258,5 +268,3 @@ output "dashboard_url" {
   description = "URL of the CloudWatch dashboard"
   value       = "https://console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=${aws_cloudwatch_dashboard.main_dashboard.dashboard_name}"
 }
-
-data "aws_region" "current" {}

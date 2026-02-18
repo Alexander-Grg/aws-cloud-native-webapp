@@ -10,12 +10,6 @@ variable "db_password" {
   sensitive = true
 }
 
-variable "allowed_ip" {
-  description = "IP that allowed for the AWS security group"
-  type = string
-  sensitive = true
-}
-
 variable "aws_account_id" {
   description = "AWS account ID"
   type = string
@@ -27,31 +21,12 @@ variable "default_region" {
   type = string
 }
 
-variable "ip_range" {
-  description = "A range of codespaces ips"
-  type = string
-  sensitive = true
-
-}
-
-variable "is_codespaces" {
-  type        = bool
-  default     = false
-  description = "Set to true if running in GitHub Codespaces environment"
-}
-
 # Lambda function post-confirmation
 variable "function_name_lambda_post_confirmation" {
   description = "Name of the Lambda function"
   type        = string
   default     = "webapp-post-confirmation2"
 }
-
-# variable "prod_connection_string" {
-#   description = "PostgreSQL connection string for production database"
-#   type        = string
-#   sensitive   = true
-# }
 
 variable "psycopg2_layer_arn" {
   description = "ARN of the psycopg2 Lambda layer"

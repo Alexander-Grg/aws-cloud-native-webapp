@@ -7,11 +7,10 @@ resource "aws_vpc" "main" {
 
   tags = {
     Name        = "main-vpc"
-    Environment = "production"
+    Environment = var.environment
   }
 }
 
-# Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -20,11 +19,11 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
-# Subnets
 resource "aws_subnet" "subnet_2a" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "172.31.0.0/20"
   availability_zone       = "ap-southeast-2a"
+  # trivy:ignore:AVD-AWS-0164
   map_public_ip_on_launch = true
 
   tags = {
@@ -36,6 +35,7 @@ resource "aws_subnet" "subnet_2b" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "172.31.32.0/20"
   availability_zone       = "ap-southeast-2b"
+  # trivy:ignore:AVD-AWS-0164
   map_public_ip_on_launch = true
 
   tags = {
@@ -47,6 +47,7 @@ resource "aws_subnet" "subnet_2c" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "172.31.16.0/20"
   availability_zone       = "ap-southeast-2c"
+  # trivy:ignore:AVD-AWS-0164
   map_public_ip_on_launch = true
 
   tags = {
@@ -54,7 +55,6 @@ resource "aws_subnet" "subnet_2c" {
   }
 }
 
-# Route Table
 resource "aws_route_table" "main" {
   vpc_id = aws_vpc.main.id
 
@@ -68,7 +68,6 @@ resource "aws_route_table" "main" {
   }
 }
 
-# Route Table Associations
 resource "aws_route_table_association" "subnet_2a" {
   subnet_id      = aws_subnet.subnet_2a.id
   route_table_id = aws_route_table.main.id
@@ -84,7 +83,6 @@ resource "aws_route_table_association" "subnet_2c" {
   route_table_id = aws_route_table.main.id
 }
 
-# Create DB Subnet Group
 resource "aws_db_subnet_group" "webapp_db_subnet_group" {
   name       = "webapp-db-subnet-group"
   subnet_ids = [aws_subnet.subnet_2a.id, aws_subnet.subnet_2b.id, aws_subnet.subnet_2c.id]

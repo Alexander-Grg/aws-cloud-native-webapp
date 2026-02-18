@@ -2,6 +2,11 @@ provider "aws" {
   region = "ap-southeast-2"
 }
 
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
 data "aws_ami" "ubuntu" {
   most_recent = true
 
@@ -13,11 +18,10 @@ data "aws_ami" "ubuntu" {
   owners = ["099720109477"] # Canonical
 }
 
-data "dotenv" "main" {
-  count    = var.is_codespaces ? 0 : 1  # Only load .env file locally, not in Codespaces
-  filename = "../.env"
+data "aws_caller_identity" "current" {}
+
+data "aws_prefix_list" "s3" {
+  name = "com.amazonaws.ap-southeast-2.s3"
 }
 
-data "http" "current_ip" {
-  url = "https://ifconfig.me/ip"
-}
+data "aws_region" "current" {}

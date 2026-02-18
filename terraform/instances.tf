@@ -2,21 +2,24 @@ resource "aws_instance" "app_server" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = "t3.micro"
   subnet_id     = aws_subnet.subnet_2a.id
-  key_name      = aws_key_pair.ansible_key.key_name
  
-  vpc_security_group_ids = [aws_security_group.ssh_only.id]
+  vpc_security_group_ids = [aws_security_group.EC2_SG_Nginx.id]
+  iam_instance_profile = aws_iam_instance_profile.ec2_ssm_profile.name
 
-  tags = {
-    Name = "AWS_PRACTICE"
+   root_block_device {
+    encrypted   = true
+    volume_type = "gp3"
+    volume_size = 8
   }
-}
 
-output "instance_public_ip" {
-  value = aws_instance.app_server.public_ip
-  description = "Public IP for SSH access"
-}
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
 
-output "instance_public_dns" {
-  value = aws_instance.app_server.public_dns
-  description = "Public DNS for SSH access"
+tags = {
+  Name        = "app_server"
+  Role        = "app"
+  Environment = var.environment
+}
 }
