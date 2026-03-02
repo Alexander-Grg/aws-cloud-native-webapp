@@ -1,5 +1,5 @@
 # RDS Database Instance - webapp-rds-instance
-# tfsec:ignore:aws-rds-enable-iam-authentication
+# trivy:ignore:aws-rds-enable-iam-authentication
 resource "aws_db_instance" "webapp_rds_instance" {
   identifier     = "webapp-rds-instance"
   engine         = "postgres"
@@ -21,8 +21,8 @@ resource "aws_db_instance" "webapp_rds_instance" {
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
   db_subnet_group_name   = aws_db_subnet_group.webapp_db_subnet_group.name
   
-  # Ignore for tfsec, because backup retention is out of the FREE AWS Tier.
-  # tfsec:ignore:aws-rds-specify-backup-retention
+  # Ignore for trivy, because backup retention is out of the FREE AWS Tier.
+  # trivy:ignore:aws-rds-specify-backup-retention
   # backup_retention_period = 7
     # For production env should be false
   skip_final_snapshot     = true
@@ -65,9 +65,7 @@ output "db_connection_string" {
 
 resource "aws_dynamodb_table" "webapp_messages" {
   name           = "webapp-messages"
-  billing_mode   = "PROVISIONED"
-  read_capacity  = 5
-  write_capacity = 5
+  billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "pk"
   range_key      = "sk"
 
@@ -91,8 +89,6 @@ resource "aws_dynamodb_table" "webapp_messages" {
     hash_key        = "message_group_uuid"
     range_key       = "sk"
     projection_type = "ALL"
-    read_capacity   = 5
-    write_capacity  = 5
   }
 
   stream_enabled   = true
