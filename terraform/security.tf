@@ -3,17 +3,14 @@
 # Lambda Security Group
 resource "aws_security_group" "lambda_sg" {
   name        = "webapp-lambda-sg"
-  description = "Security Group for Lambda functions"
   vpc_id      = aws_vpc.main.id
 
-    egress {
-    description = "AWS Services (S3, CloudWatch)"
+  egress {
+    description = "HTTPS to VPC Endpoints and Dynamo DB"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    prefix_list_ids = [
-      data.aws_prefix_list.s3.id
-    ]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -21,12 +18,7 @@ resource "aws_security_group" "lambda_sg" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]  # Simpler: Allow to VPC
-  }
-
-  tags = {
-    Name        = "webapp-lambda-sg"
-    Environment = var.environment
+    cidr_blocks = [aws_vpc.main.cidr_block]
   }
 }
 
@@ -36,7 +28,7 @@ resource "aws_security_group" "rds_sg" {
   description = "Security Group for RDS PostgreSQL database"
   vpc_id      = aws_vpc.main.id
   
-  ingress {
+ingress {
     description     = "PostgreSQL from Lambda"
     from_port       = 5432
     to_port         = 5432
@@ -53,19 +45,11 @@ resource "aws_security_group" "rds_sg" {
   }
 
   egress {
-    description     = "Allow responses to EC2"
+    description     = "Allow all outbound"
     from_port       = 0
     to_port         = 0
     protocol        = "-1"
-    security_groups = [aws_security_group.EC2_SG_Nginx.id]
-  }
-
-  egress {
-    description     = "Allow responses to Lambda"
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    security_groups = [aws_security_group.lambda_sg.id]
+    cidr_blocks     = ["0.0.0.0/0"]
   }
 
   tags = {
@@ -538,11 +522,6 @@ output "EC2_SG_id" {
 output "ssm_instance_profile_name" {
   description = "Name of the IAM instance profile for SSM"
   value       = aws_iam_instance_profile.ec2_ssm_profile.name
-}
-
-output "lambda_sg_id" {
-  description = "ID of the Lambda security group"
-  value       = aws_security_group.lambda_sg.id
 }
 
 output "rds_sg_id" {
