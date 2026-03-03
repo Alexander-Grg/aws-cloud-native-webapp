@@ -66,6 +66,7 @@ jobs:
         run: docker compose down -v
 
   build-lambda-packages:
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
     needs: test-app-dev
     runs-on: ubuntu-latest
     defaults:
@@ -88,6 +89,7 @@ jobs:
           path: ./terraform/*.zip
 
   manage-infra:
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
     needs: build-lambda-packages
     runs-on: ubuntu-latest
     defaults:
@@ -104,10 +106,14 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
-      - name: Terraform Init & Apply
-        run: |
-          terraform init
-          terraform apply -auto-approve
+      - name: Terraform Init
+        run: terraform init
+      - name: Terraform Plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -no-color
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve
 
   create-ecr:
     needs: test-app-dev
