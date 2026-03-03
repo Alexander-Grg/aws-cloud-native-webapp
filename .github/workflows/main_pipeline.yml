@@ -97,20 +97,25 @@ jobs:
         working-directory: ./terraform
     steps:
       - uses: actions/checkout@v4
+      
       - name: Download Lambda packages
         uses: actions/download-artifact@v4
         with:
           name: lambda-packages
           path: ./terraform
+          
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
+          
       - name: Terraform Init
         run: terraform init
+
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
         run: terraform plan -no-color
+        
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve
