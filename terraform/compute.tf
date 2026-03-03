@@ -1,15 +1,3 @@
-data "archive_file" "post_confirmation_zip" {
-  type        = "zip"
-  source_file  = "${path.module}/../lambdas/post_confirmation.py"
-  output_path = "${path.module}/post_confirmation.zip"
-}
-
-data "archive_file" "messaging_stream_zip" {
-  type        = "zip"
-  source_file  = "${path.module}/../lambdas/messaging_stream.py"
-  output_path = "${path.module}/messaging_stream.zip"
-}
-
 locals {
   post_confirmation_handler = "post_confirmation.lambda_handler"
   messaging_stream_handler  = "messaging_stream.lambda_handler"
@@ -27,8 +15,8 @@ resource "aws_cloudwatch_log_group" "lambda_post_confirmation_logs" {
 
 # Post Confirmation Lambda Function
 resource "aws_lambda_function" "webapp_post_confirmation" {
-  filename         = data.archive_file.post_confirmation_zip.output_path
-  source_code_hash = data.archive_file.post_confirmation_zip.output_base64sha256
+  filename         = "${path.module}/post_confirmation.zip"
+  source_code_hash = filebase64sha256("${path.module}/post_confirmation.zip")
   function_name    = var.function_name_lambda_post_confirmation
   role             = aws_iam_role.webapp_post_confirmation_role.arn
   handler          = local.post_confirmation_handler
@@ -45,12 +33,8 @@ resource "aws_lambda_function" "webapp_post_confirmation" {
   }
 
   vpc_config {
-    subnet_ids         = aws_subnet.subnet_2a.id != null ? [aws_subnet.subnet_2a.id, aws_subnet.subnet_2b.id, aws_subnet.subnet_2c.id] : []
+    subnet_ids         = [aws_subnet.subnet_2a.id, aws_subnet.subnet_2b.id, aws_subnet.subnet_2c.id]
     security_group_ids = [aws_security_group.lambda_sg.id]
-  }
-
-  ephemeral_storage {
-    size = 512
   }
 
   tracing_config {
@@ -91,8 +75,8 @@ resource "aws_cloudwatch_log_group" "webapp_messaging_stream_logs" {
 
 # Messaging Stream Lambda Function
 resource "aws_lambda_function" "webapp_messaging_stream" {
-  filename         = data.archive_file.messaging_stream_zip.output_path
-  source_code_hash = data.archive_file.messaging_stream_zip.output_base64sha256
+  filename         = "${path.module}/messaging_stream.zip"
+  source_code_hash = filebase64sha256("${path.module}/messaging_stream.zip")
   function_name    = var.function_name_webapp_messaging_stream
   role             = aws_iam_role.messaging_stream_lambda_role.arn
   handler          = local.messaging_stream_handler
@@ -102,17 +86,13 @@ resource "aws_lambda_function" "webapp_messaging_stream" {
   architectures    = ["x86_64"]
   package_type     = "Zip"
 
-  vpc_config {
-    subnet_ids         = aws_subnet.subnet_2a.id != null ? [aws_subnet.subnet_2a.id, aws_subnet.subnet_2b.id, aws_subnet.subnet_2c.id] : []
-    security_group_ids = [aws_security_group.lambda_sg.id]
-  }
-
-  ephemeral_storage {
-    size = 512
-  }
-
   tracing_config {
     mode = "PassThrough"
+  }
+
+  vpc_config {
+    subnet_ids         = [aws_subnet.subnet_2a.id, aws_subnet.subnet_2b.id, aws_subnet.subnet_2c.id]
+    security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
   logging_config {
