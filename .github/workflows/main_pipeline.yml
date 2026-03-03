@@ -66,6 +66,7 @@ jobs:
         run: docker compose down -v
 
   build-lambda-packages:
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
     needs: test-app-dev
     runs-on: ubuntu-latest
     defaults:
@@ -88,6 +89,7 @@ jobs:
           path: ./terraform/*.zip
 
   manage-infra:
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
     needs: build-lambda-packages
     runs-on: ubuntu-latest
     defaults:
