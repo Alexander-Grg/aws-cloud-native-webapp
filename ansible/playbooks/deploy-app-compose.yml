@@ -146,6 +146,18 @@
           FRONTEND_URL=https://{{ ansible_default_ipv4.address }}
           BACKEND_URL=https://{{ ansible_default_ipv4.address }}
 
+    - name: Remove old Docker data to free up space
+      community.docker.docker_prune:
+        containers: true
+        networks: true
+        volumes: true
+        builder_cache: true
+        images: true
+        images_filters:
+          dangling: false
+      ignore_errors: true
+      become_user: "{{ app_user }}" 
+
     - name: Deploy Services via Docker Compose
       community.docker.docker_compose_v2:
         project_src: "{{ app_dir }}"
