@@ -6,6 +6,12 @@ LABEL="db-seed"
 printf "${CYAN}== ${LABEL}${NO_COLOR}\n"
 
 seed_path="$(realpath .)/backend-flask/db/sql/seed.sql"
+
+if [ -f ".env" ]; then
+  set -a; source .env; set +a
+elif [ -f "../.env" ]; then
+  set -a; source ../.env; set +a
+fi
 echo $seed_path
 
 if [ "$1" = "prod" ]; then
@@ -17,5 +23,3 @@ fi
 
 # Replace the internal hostname 'db' with 'localhost' for host access
 URL="${URL/@db/@localhost}"
-
-psql "$URL" < "$seed_path"

@@ -45,8 +45,10 @@ def load(app):
   @cross_origin()
   @jwt_required()
   def data_activities():
-    message = request.json['message']
-    ttl = request.json['ttl']
+    data = request.get_json(force=True, silent=True) or {}
+    message = data.get('message')
+    ttl = data.get('ttl')
+    
     model = CreateActivity.run(message, g.cognito_user_id, ttl)
     return model_json(model)
 
@@ -54,6 +56,8 @@ def load(app):
   @cross_origin()
   @jwt_required()
   def data_activities_reply(activity_uuid):
-    message = request.json['message']
+    data = request.get_json(force=True, silent=True) or {}
+    message = data.get('message')
+    
     model = CreateReply.run(message, g.cognito_user_id, activity_uuid)
     return model_json(model)

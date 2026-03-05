@@ -10,11 +10,9 @@ echo $schema_path
 
 if [ "$1" = "prod" ]; then
   echo "Running in production mode"
-  URL=$PROD_CONNECTION_URL
+  URL=$PROD_CONNECTION_STRING
 else
   URL=$CONNECTION_STRING
 fi
 
 URL="${URL/@db/@localhost}"
-
-psql "$URL" webapp < "$schema_path"
