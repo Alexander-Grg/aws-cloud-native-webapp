@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# docker-compose exec backend-flask python3 -m bin.ddb.put_message
 import boto3
 import sys
 from datetime import datetime, timedelta, timezone
@@ -14,7 +13,6 @@ if len(sys.argv) == 2:
     attrs = {}
 
 def create_message(client,message_group_uuid, created_at, message, sender_uuid, sender_display_name, sender_handle):
-  # Entity # Message Group Id
   record = {
     'pk':   {'S': f"MSG#{message_group_uuid}"},
     'sk':   {'S': created_at },
@@ -23,42 +21,22 @@ def create_message(client,message_group_uuid, created_at, message, sender_uuid, 
     'sender_display_name': {'S': sender_display_name},
     'sender_handle': {'S': sender_handle}
   }
-  # insert the record into the table
   table_name = 'webapp-messages'
   response = client.put_item(
     TableName=table_name,
     Item=record
   )
-  # print the response
   print(response)
 
 def grg_message(client,timestamp,message):
   sender_uuid = "2aa1c49c-669a-47b0-9177-37efe9e420c4"
   message_group_uuid = "5ae290ed-55d1-47a0-bc6d-fe2bc2700399"
-
-  create_message(
-    client=client,
-    message_group_uuid= message_group_uuid,
-    created_at=timestamp,
-    message=message,
-    sender_uuid=sender_uuid,
-    sender_display_name='Alex Grg',
-    sender_handle='alexgrg'
-  )
+  create_message(client, message_group_uuid, timestamp, message, sender_uuid, 'Alex Grg', 'alexgrg')
 
 def grigoryev_message(client,timestamp,message):
   sender_uuid = "31634299-187a-4ed9-920f-c119e54074f"
   message_group_uuid = "5ae290ed-55d1-47a0-bc6d-fe2bc2700399"
-
-  create_message(
-    client=client,
-    message_group_uuid= message_group_uuid,
-    created_at=timestamp,
-    message=message,
-    sender_uuid=sender_uuid,
-    sender_display_name='Alexander Grigoryev',
-    sender_handle='grigoryev'
-  )
+  create_message(client, message_group_uuid, timestamp, message, sender_uuid, 'Alexander Grigoryev', 'grigoryev')
 
 dynamodb = boto3.client('dynamodb',**attrs)
 now = datetime.now(timezone.utc).astimezone()
@@ -170,7 +148,7 @@ Person 1: And Javik was just one example of that. He was a small but important p
 Person 2: Definitely. I think his character is a great example of the series' ability to balance humor and tragedy, and to create memorable and beloved characters that fans will cherish for years to come.
 """
 
-lines = conversation.split('\n')
+lines = conversation.strip().split('\n')
 
 for i in range(len(lines)):
   if lines[i].startswith('Person 1: '):

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# docker-compose exec backend-flask python3 -m bin.ddb.get_conversation
 import os
 import boto3
 import sys
@@ -18,8 +17,8 @@ dynamodb = boto3.client('dynamodb',**attrs)
 table_name = 'webapp-messages'
 
 message_group_uuid = "5ae290ed-55d1-47a0-bc6d-fe2bc2700399"
+year = str(datetime.now().year)
 
-year = str(datetime.datetime.now().year)
 # define the query parameters
 query_params = {
   'TableName': table_name,
@@ -27,32 +26,27 @@ query_params = {
   'Limit': 20,
   'ReturnConsumedCapacity': 'TOTAL',
   'KeyConditionExpression': 'pk = :pk AND begins_with(sk,:year)',
-  #'KeyConditionExpression': 'pk = :pk AND sk BETWEEN :start_date AND :end_date',
   'ExpressionAttributeValues': {
     ':year': {'S': year },
-    #":start_date": { "S": "2023-03-01T00:00:00.000000+00:00" },
-    #":end_date": { "S": "2023-03-19T23:59:59.999999+00:00" },
     ':pk': {'S': f"MSG#{message_group_uuid}"}
   }
 }
-
 
 # query the table
 response = dynamodb.query(**query_params)
 
 # print the items returned by the query
 print(json.dumps(response, sort_keys=True, indent=2))
-
-# print the consumed capacity
 print(json.dumps(response['ConsumedCapacity'], sort_keys=True, indent=2))
 
-items = response['Items']
+items = response.get('Items', [])
 items.reverse()
 
 for item in reversed(items):
   sender_handle = item['user_handle']['S']
   message       = item['message']['S']
   timestamp     = item['sk']['S']
-  dt_object = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%f%z')
+  
+  dt_object = datetime.fromisoformat(timestamp)
   formatted_datetime = dt_object.strftime('%Y-%m-%d %I:%M %p')
   print(f'{sender_handle: <12}{formatted_datetime: <22}{message[:40]}...')

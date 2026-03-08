@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-# docker-compose exec backend-flask python3 -m bin.ddb.schema-load
-
 import boto3
 import sys
 import os
+from botocore.exceptions import ClientError
 
 attrs = {
   'endpoint_url': os.getenv("AWS_ENDPOINT_URL")
@@ -16,27 +15,15 @@ if len(sys.argv) == 2:
 dynamodb = boto3.client('dynamodb', **attrs)
 table_name = 'webapp-messages'
 
-# define the schema for the table
 table_schema = {
   'AttributeDefinitions': [
-    {
-      'AttributeName': 'message_group_uuid',
-      'AttributeType': 'S'
-    },{
-      'AttributeName': 'pk',
-      'AttributeType': 'S'
-    },{
-      'AttributeName': 'sk',
-      'AttributeType': 'S'
-    }
+    {'AttributeName': 'message_group_uuid', 'AttributeType': 'S'},
+    {'AttributeName': 'pk', 'AttributeType': 'S'},
+    {'AttributeName': 'sk', 'AttributeType': 'S'}
   ],
-  'KeySchema': [{
-      'AttributeName': 'pk',
-      'KeyType': 'HASH'
-    },{
-      'AttributeName': 'sk',
-      'KeyType': 'RANGE'
-    }
+  'KeySchema': [
+    {'AttributeName': 'pk', 'KeyType': 'HASH'},
+    {'AttributeName': 'sk', 'KeyType': 'RANGE'}
   ],
   'BillingMode': 'PROVISIONED',
   'ProvisionedThroughput': {
@@ -45,13 +32,10 @@ table_schema = {
   },
   'GlobalSecondaryIndexes':[{
     'IndexName':'message-group-sk-index',
-    'KeySchema':[{
-      'AttributeName': 'message_group_uuid',
-      'KeyType': 'HASH'
-    },{
-      'AttributeName': 'sk',
-      'KeyType': 'RANGE'
-    }],
+    'KeySchema':[
+      {'AttributeName': 'message_group_uuid', 'KeyType': 'HASH'},
+      {'AttributeName': 'sk', 'KeyType': 'RANGE'}
+    ],
     'Projection': {
       'ProjectionType': 'ALL'
     },
@@ -62,11 +46,15 @@ table_schema = {
   }]
 }
 
-# create the table
-response = dynamodb.create_table(
-    TableName=table_name,
-    **table_schema
-)
-
-# print the response
-print(response)
+try:
+    response = dynamodb.create_table(
+        TableName=table_name,
+        **table_schema
+    )
+    print(f"Table '{table_name}' created successfully.")
+    print(response)
+except ClientError as e:
+    if e.response['Error']['Code'] == 'ResourceInUseException':
+        print(f"Table '{table_name}' already exists. Skipping creation.")
+    else:
+        raise

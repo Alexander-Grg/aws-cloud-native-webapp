@@ -1,28 +1,22 @@
 #!/usr/bin/env python3
-# docker-compose exec backend-flask python3 -m bin.ddb.seed
-
 import boto3
 import sys
 from datetime import datetime, timedelta, timezone
 import uuid
 import os
 
-
 current_path = os.path.dirname(os.path.abspath(__file__))
 parent_path = os.path.abspath(os.path.join(current_path, '..', '..'))
 sys.path.append(parent_path)
 from lib.db import db
 
-
 attrs = {
   'endpoint_url': os.getenv("AWS_ENDPOINT_URL")
 }
-# unset endpoint url for use with production database
 if len(sys.argv) == 2:
   if "prod" in sys.argv[1]:
     attrs = {}
 dynamodb = boto3.client('dynamodb',**attrs)
-
 
 def get_user_uuids(my_handle, other_handle):
   sql = """
@@ -45,6 +39,11 @@ def get_user_uuids(my_handle, other_handle):
   my_user = next((item for item in users if item["handle"] == my_handle), None)
   other_user = next((item for item in users if item["handle"] == other_handle), None)
   
+  if not my_user or not other_user:
+    print(f"CRITICAL ERROR: Could not find user '{my_handle}' or '{other_handle}' in PostgreSQL.")
+    print("Please ensure your RDS database has been seeded before running DynamoDB seed.")
+    sys.exit(1)
+
   results = {
     'my_user': my_user,
     'other_user': other_user
@@ -53,7 +52,6 @@ def get_user_uuids(my_handle, other_handle):
   print('get_user_uuids')
   print(results)
   return results
-
 
 def create_message_group(client,message_group_uuid, my_user_uuid, last_message_at=None, message=None, other_user_uuid=None, other_user_display_name=None, other_user_handle=None):
   table_name = 'webapp-messages'
@@ -66,17 +64,13 @@ def create_message_group(client,message_group_uuid, my_user_uuid, last_message_a
     'user_display_name': {'S': other_user_display_name},
     'user_handle': {'S': other_user_handle}
   }
-
-
   response = client.put_item(
     TableName=table_name,
     Item=record
   )
   print(response)
 
-
 def create_message(client,message_group_uuid, created_at, message, my_user_uuid, my_user_display_name, my_user_handle):
-  # Entity # Message Group Id
   record = {
     'pk':   {'S': f"MSG#{message_group_uuid}"},
     'sk':   {'S': created_at },
@@ -86,24 +80,16 @@ def create_message(client,message_group_uuid, created_at, message, my_user_uuid,
     'user_display_name': {'S': my_user_display_name},
     'user_handle': {'S': my_user_handle}
   }
-  # insert the record into the table
   table_name = 'webapp-messages'
   response = client.put_item(
     TableName=table_name,
     Item=record
   )
-  # print the response
   print(response)
 
-
-
-
-message_group_uuid = "5ae290ed-55d1-47a0-bc6d-fe2bc2700399" #str(uuid.uuid4())
+message_group_uuid = "5ae290ed-55d1-47a0-bc6d-fe2bc2700399" 
 users = get_user_uuids(my_handle='alexgrg', other_handle='alex2')
-
-
 now = datetime.now(timezone.utc).astimezone()
-
 
 create_message_group(
   client=dynamodb,
@@ -116,7 +102,6 @@ create_message_group(
   message="this is a filler message"
 )
 
-
 create_message_group(
   client=dynamodb,
   message_group_uuid=message_group_uuid,
@@ -127,7 +112,6 @@ create_message_group(
   last_message_at=now.isoformat(),
   message="this is a filler message"
 )
-
 
 conversation = """
 Person 1: Have you ever played any of the games from the Mass Effect trilogy? It's one of my favorite gaming series!
@@ -236,8 +220,7 @@ Person 1: And Javik was just one example of that. He was a small but important p
 Person 2: Definitely. I think his character is a great example of the series' ability to balance humor and tragedy, and to create memorable and beloved characters that fans will cherish for years to come.
 """
 
-
-lines = conversation.lstrip('\n').rstrip('\n').split('\n')
+lines = conversation.strip().split('\n')
 for i in range(len(lines)):
   if lines[i].startswith('Person 1: '):
     key = 'my_user'
@@ -247,8 +230,7 @@ for i in range(len(lines)):
     message = lines[i].replace('Person 2: ', '')
   else:
     print(lines[i])
-    raise 'invalid line'
-
+    raise ValueError(f"Invalid line format in conversation block: {lines[i]}")
 
   created_at = (now + timedelta(minutes=i)).isoformat()
   create_message(
