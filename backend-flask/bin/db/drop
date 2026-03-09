@@ -10,15 +10,6 @@ fi
 
 CON_STRING="${CON_STRING/@db/@localhost}"
 
-echo "Terminating active connections to the database..."
-
-psql "${CON_STRING%/*}/postgres" -c "
-SELECT pg_terminate_backend(pg_stat_activity.pid)
-FROM pg_stat_activity
-WHERE pg_stat_activity.datname = 'webapp'
-  AND pid <> pg_backend_pid();
-"
-
 echo "Dropping the database..."
 
 psql "${CON_STRING%/*}/postgres" -c "DROP DATABASE IF EXISTS webapp;"

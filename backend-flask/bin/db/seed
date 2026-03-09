@@ -12,14 +12,17 @@ if [ -f ".env" ]; then
 elif [ -f "../.env" ]; then
   set -a; source ../.env; set +a
 fi
-echo $seed_path
 
 if [ "$1" = "prod" ]; then
   echo "Running in production mode"
   URL=$PROD_CONNECTION_STRING
 else
+  echo "Running in development mode"
   URL=$CONNECTION_STRING
 fi
 
-# Replace the internal hostname 'db' with 'localhost' for host access
 URL="${URL/@db/@localhost}"
+
+echo "Seeding database from: $seed_path"
+
+psql "$URL" -f "$seed_path"
