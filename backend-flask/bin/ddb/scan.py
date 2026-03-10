@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# docker-compose exec backend-flask python3 -m bin.ddb.scan
 import boto3
 import os
 
@@ -11,6 +10,6 @@ table_name = 'webapp-messages'
 
 table = dynamodb.Table(table_name)
 response = table.scan()
-items = response['Items']
+items = response.get('Items', [])
 for item in items:
     print(item)

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-
-# --Command to run the script--
-# docker-compose exec backend-flask python3 -m bin.ddb.update_cognito_user_ids
-
 import boto3
 import os
+import sys
+
+current_path = os.path.dirname(os.path.abspath(__file__))
+parent_path = os.path.abspath(os.path.join(current_path, '..', '..'))
+sys.path.append(parent_path)
 from lib.db import db
 
 print("== db-update-cognito-user-ids")
@@ -38,7 +39,7 @@ def get_cognito_user_ids():
     attrs = user['Attributes']
     sub    = next((a for a in attrs if a["Name"] == 'sub'), None)
     handle = next((a for a in attrs if a["Name"] == 'preferred_username'), None)
-    if handle and sub: # Add check to ensure both values exist
+    if handle and sub:
       dict_users[handle['Value']] = sub['Value']
   return dict_users
 

@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-# docker-compose exec backend-flask python3 -m bin.ddb.list_conversation
 import boto3
 import sys
 import json
 import os
-from lib.db import db
 from datetime import datetime
 
 current_path = os.path.dirname(os.path.abspath(__file__))
-parent_path = os.path.abspath(os.path.join(current_path, '..', '..', '..'))
+parent_path = os.path.abspath(os.path.join(current_path, '..', '..'))
 sys.path.append(parent_path)
 from lib.db import db
 
@@ -38,6 +36,7 @@ def get_my_user_uuid():
 
 my_user_uuid = get_my_user_uuid()
 print(f"my-uuid: {my_user_uuid}")
+
 year = str(datetime.now().year)
 # define the query parameters
 query_params = {
@@ -53,6 +52,4 @@ query_params = {
 
 # query the table
 response = dynamodb.query(**query_params)
-
-# print the items returned by the query
 print(json.dumps(response, sort_keys=True, indent=2))

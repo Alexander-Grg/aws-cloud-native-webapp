@@ -1,8 +1,8 @@
-#! /bin/bash
+#!/usr/bin/env bash
 set -e
 
 if [ -z "$1" ]; then
-  echo "No TABLE_NAME argument supplied eg. bin/rds/describe-table webapp-messages"
+  echo "No TABLE_NAME argument supplied eg. bin/ddb/describe-table webapp-messages"
   exit 1
 fi
 TABLE_NAME=$1
@@ -13,6 +13,6 @@ else
   ENDPOINT_URL="--endpoint-url=http://localhost:8000"
 fi
 
-aws dynamodb describe-table  $ENDPOINT_URL \
+aws dynamodb describe-table $ENDPOINT_URL \
   --table-name $TABLE_NAME \
   --output table
