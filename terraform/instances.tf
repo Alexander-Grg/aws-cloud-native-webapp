@@ -9,7 +9,7 @@ resource "aws_instance" "app_server" {
    root_block_device {
     encrypted   = true
     volume_type = "gp3"
-    volume_size = 8
+    volume_size = 20
   }
 
   metadata_options {
@@ -22,4 +22,32 @@ tags = {
   Role        = "app"
   Environment = var.environment
 }
+}
+
+# A policy for the EC2 role to read DynamoDB
+resource "aws_iam_role_policy" "dynamodb_messages_access" {
+  name = "DynamoDBMessagesAccessPolicy"
+  role = aws_iam_role.ec2_ssm_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowDynamoDBAccess"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:Scan",
+          "dynamodb:Query",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = [
+          "arn:aws:dynamodb:ap-southeast-2:735702561203:table/webapp-messages",
+          "arn:aws:dynamodb:ap-southeast-2:735702561203:table/webapp-messages/index/*"
+        ]
+      }
+    ]
+  })
 }
