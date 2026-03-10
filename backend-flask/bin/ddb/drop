@@ -1,17 +1,18 @@
-#! /usr/bin/bash
-
+#!/usr/bin/env bash
 set -e
 
 if [ -f ".env" ]; then
     echo "Loading .env variables..."
-    export $(grep -v '^#' .env | xargs)
+    set -a
+    source .env
+    set +a
 else
     echo "Error: .env file not found at project root!"
     exit 1
 fi
 
 if [ -z "$1" ]; then
-  echo "No TABLE_NAME argument supplied eg. bin/rds/describ-table webapp-messages"
+  echo "No TABLE_NAME argument supplied eg. bin/ddb/drop webapp-messages"
   exit 1
 fi
 TABLE_NAME=$1
@@ -22,5 +23,5 @@ else
   ENDPOINT_URL="--endpoint-url=http://localhost:8000"
 fi
 
-aws dynamodb delete-table  $ENDPOINT_URL \
+aws dynamodb delete-table $ENDPOINT_URL \
   --table-name $TABLE_NAME

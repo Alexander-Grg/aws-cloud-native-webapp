@@ -108,6 +108,11 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
+      - name: Terraform Init
+        run: terraform init
+      - name: Terraform Plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -no-color
           
       - name: Terraform Init
         run: terraform init

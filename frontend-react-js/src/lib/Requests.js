@@ -6,26 +6,39 @@ async function request(method, url, payload_data, options) {
   }
   let res;
   try {
-    const attrs = {
-      method: method,
-      headers: {
-        'Content-Type': 'application/json'
-      }
+    const headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
     };
 
     if (options.hasOwnProperty('auth') && options.auth === true) {
       await getAccessToken();
       const access_token = localStorage.getItem("access_token");
-      attrs.headers['Authorization'] = `Bearer ${access_token}`;
+      headers['Authorization'] = `Bearer ${access_token}`;
     }
+
+    const attrs = {
+      method: method,
+      headers: headers
+    };
 
     if (method !== 'GET') {
       attrs.body = JSON.stringify(payload_data);
     }
 
     res = await fetch(url, attrs);
+
+    if (!res.ok && res.status === 500) {
+      console.error("Backend threw a 500 Internal Server Error");
+      if (options.hasOwnProperty('setErrors')) {
+        options.setErrors(['internal_server_error']);
+      }
+      return;
+    }
+
     let data = await res.json();
-    if (res.status === 200) {
+
+    if (res.status === 200 || res.status === 201) {
       options.success(data);
     } else {
       if (options.setErrors !== null) {

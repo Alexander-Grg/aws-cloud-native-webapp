@@ -1,4 +1,4 @@
-#! /usr/bin/bash
+#!/usr/bin/env bash
 
 CYAN='\033[1;36m'
 NO_COLOR='\033[0m'
@@ -6,15 +6,23 @@ LABEL="db-schema-load"
 printf "${CYAN}== ${LABEL}${NO_COLOR}\n"
 
 schema_path="$(realpath .)/backend-flask/db/sql/schema.sql"
-echo $schema_path
+
+if [ -f ".env" ]; then
+  set -a; source .env; set +a
+elif [ -f "../.env" ]; then
+  set -a; source ../.env; set +a
+fi
 
 if [ "$1" = "prod" ]; then
   echo "Running in production mode"
-  URL=$PROD_CONNECTION_URL
+  URL=$PROD_CONNECTION_STRING
 else
+  echo "Running in development mode"
   URL=$CONNECTION_STRING
 fi
 
 URL="${URL/@db/@localhost}"
 
-psql "$URL" webapp < "$schema_path"
+echo "Loading schema from: $schema_path"
+
+psql "$URL" -f "$schema_path"

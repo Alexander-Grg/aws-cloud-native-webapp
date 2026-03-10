@@ -6,16 +6,23 @@ LABEL="db-seed"
 printf "${CYAN}== ${LABEL}${NO_COLOR}\n"
 
 seed_path="$(realpath .)/backend-flask/db/sql/seed.sql"
-echo $seed_path
+
+if [ -f ".env" ]; then
+  set -a; source .env; set +a
+elif [ -f "../.env" ]; then
+  set -a; source ../.env; set +a
+fi
 
 if [ "$1" = "prod" ]; then
   echo "Running in production mode"
   URL=$PROD_CONNECTION_STRING
 else
+  echo "Running in development mode"
   URL=$CONNECTION_STRING
 fi
 
-# Replace the internal hostname 'db' with 'localhost' for host access
 URL="${URL/@db/@localhost}"
 
-psql "$URL" < "$seed_path"
+echo "Seeding database from: $seed_path"
+
+psql "$URL" -f "$seed_path"

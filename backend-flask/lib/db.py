@@ -26,8 +26,7 @@ class Db:
   def init_pool(self):
     connection_url = os.getenv("CONNECTION_STRING")
     self.pool = ConnectionPool(connection_url)
-  # we want to commit data such as an insert
-  # be sure to check for RETURNING in all uppercases
+    
   def print_params(self,params):
     blue = '\033[94m'
     no_color = '\033[0m'
@@ -40,6 +39,7 @@ class Db:
     no_color = '\033[0m'
     print(f'{cyan} SQL STATEMENT-[{title}]------{no_color}')
     print(sql,params)
+
   def query_commit(self,sql,params={},verbose=True):
     if verbose:
       self.print_sql('commit with returning',sql,params)
@@ -58,42 +58,59 @@ class Db:
           return returning_id
     except Exception as err:
       self.print_sql_err(err)
-  # when we want to return a json object
+      # Must raise the error so Flask knows it failed (prevents silent 422s)
+      raise err
+
   def query_array_json(self,sql,params={},verbose=True):
     if verbose:
       self.print_sql('array',sql,params)
 
     wrapped_sql = self.query_wrap_array(sql)
-    with self.pool.connection() as conn:
-      with conn.cursor() as cur:
-        cur.execute(wrapped_sql,params)
-        json = cur.fetchone()
-        return json[0]
-  # When we want to return an array of json objects
+    try:
+      with self.pool.connection() as conn:
+        with conn.cursor() as cur:
+          cur.execute(wrapped_sql,params)
+          json = cur.fetchone()
+          return json[0]
+    except Exception as err:
+      self.print_sql_err(err)
+      raise err
+
   def query_object_json(self,sql,params={},verbose=True):
     if verbose:
       self.print_sql('json',sql,params)
       self.print_params(params)
 
     wrapped_sql = self.query_wrap_object(sql)
+    try:
+      with self.pool.connection() as conn:
+        with conn.cursor() as cur:
+          cur.execute(wrapped_sql,params)
+          json = cur.fetchone()
+          if json == None:
+            return "{}"
+          else:
+            return json[0]
+    except Exception as err:
+      self.print_sql_err(err)
+      raise err
 
-    with self.pool.connection() as conn:
-      with conn.cursor() as cur:
-        cur.execute(wrapped_sql,params)
-        json = cur.fetchone()
-        if json == None:
-          return "{}"
-        else:
-          return json[0]
   def query_value(self,sql,params={},verbose=True):
     if verbose:
       self.print_sql('value',sql,params)
 
-    with self.pool.connection() as conn:
-      with conn.cursor() as cur:
-        cur.execute(sql,params)
-        json = cur.fetchone()
-        return json[0]
+    try:
+      with self.pool.connection() as conn:
+        with conn.cursor() as cur:
+          cur.execute(sql,params)
+          json = cur.fetchone()
+          if json == None:
+            return None
+          return json[0]
+    except Exception as err:
+      self.print_sql_err(err)
+      raise err
+
   def query_wrap_object(self,template):
     sql = f"""
     (SELECT COALESCE(row_to_json(object_row),'{{}}'::json) FROM (
@@ -101,6 +118,7 @@ class Db:
     ) object_row);
     """
     return sql
+
   def query_wrap_array(self,template):
     sql = f"""
     (SELECT COALESCE(array_to_json(array_agg(row_to_json(array_row))),'[]'::json) FROM (
@@ -108,20 +126,11 @@ class Db:
     ) array_row);
     """
     return sql
+
   def print_sql_err(self,err):
-    # get details about the exception
     err_type, err_obj, traceback = sys.exc_info()
-
-    # get the line number when exception occured
     line_num = traceback.tb_lineno
-
-    # print the connect() error
     print ("\npsycopg ERROR:", err, "on line number:", line_num)
     print ("psycopg traceback:", traceback, "-- type:", err_type)
-
-    # Psycopg 3 uses 'sqlstate' instead of 'pgcode', and prints the message directly
-    # The attributes pgerror and pgcode are removed.
-    # print ("pgerror:", err.pgerror)
-    # print ("pgcode:", err.pgcode, "\n")
 
 db = Db()
