@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-flask-service
+spec:
+  selector:
+    app: flask-backend
+  ports:
+    - protocol: TCP
+      port: 4567    
+      targetPort: 4567 

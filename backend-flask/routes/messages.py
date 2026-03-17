@@ -2,7 +2,6 @@
 from flask import request, g
 
 ## decorators
-from aws_xray_sdk.core import xray_recorder
 from lib.cognito_jwt_token import jwt_required
 from flask_cors import cross_origin
 
