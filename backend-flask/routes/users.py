@@ -2,7 +2,6 @@
 from flask import request, g
 
 ## decorators
-from aws_xray_sdk.core import xray_recorder
 from lib.cognito_jwt_token import jwt_required
 from flask_cors import cross_origin
 
@@ -17,7 +16,6 @@ from lib.helpers import model_json
 
 def load(app):
   @app.route("/api/activities/@<string:handle>", methods=['GET'])
-  #@xray_recorder.capture('activities_users')
   def data_users_activities(handle):
     model = UserActivities.run(handle)
     return model_json(model)

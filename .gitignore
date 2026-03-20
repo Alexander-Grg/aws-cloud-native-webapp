@@ -17,7 +17,6 @@ yarn-error.log*
 package-lock.json
 
 # Environment Variables
-# Never commit secrets!
 .env
 .env.*
 !.env.example
@@ -62,3 +61,6 @@ terraform/layers/
 *.tfstate
 *.tfstate.backup
 .terraform/
+
+#k8s secrets
+*secret.yml

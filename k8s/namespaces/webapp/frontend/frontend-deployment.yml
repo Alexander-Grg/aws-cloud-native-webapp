@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-react-js
+  namespace: webapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-react-js
+  template:
+    metadata:
+      labels:
+        app: frontend-react-js
+    spec:
+      containers:
+      - name: frontend
+        image: frontend-react:v1
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3000
+        env:
+        - name: REACT_APP_AWS_PROJECT_REGION
+          value: "ap-southeast-2"
+        - name: REACT_APP_AWS_COGNITO_REGION
+          value: "ap-southeast-2"
+        - name: REACT_APP_AWS_USER_POOLS_ID
+          valueFrom:
+            secretKeyRef:
+              name: backend-secret
+              key: AWS_COGNITO_USER_POOL_ID
+        - name: REACT_APP_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: backend-secret
+              key: AWS_COGNITO_USER_POOL_CLIENT_ID
+        - name: REACT_APP_BACKEND_URL
+          value: "http://localhost:4567"
+        - name: WDS_SOCKET_PORT
+          value: "0"
