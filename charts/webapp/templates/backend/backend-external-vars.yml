@@ -1,0 +1,15 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: fetch-backend-secrets
+  namespace: webapp
+spec:
+  refreshInterval: "1h"
+  secretStoreRef:
+    name: aws-secret-connection
+    kind: ClusterSecretStore
+  target:
+    name: backend-secret
+  dataFrom:
+  - extract:
+      key: {{ .Values.backend_vault_name }}

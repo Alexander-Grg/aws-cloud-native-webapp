@@ -1,0 +1,13 @@
+# Non secret values
+  frontend_url: "http://localhost:3000"
+  backend_url: "http://localhost:4567"
+  AWS_DEFAULT_REGION: "ap-southeast-2"
+  POSTGRES_PORT: "5432"
+  POSTGRES_HOST: "postgres-db"
+  WDS_SOCKET_PORT: "0"
+
+# AWS Secret Manager
+  backend_vault_name: "webapp-backend-credentials"
+
+# CI/CD
+  ecr_registry: ""

@@ -97,13 +97,11 @@ jobs:
         working-directory: ./terraform
     steps:
       - uses: actions/checkout@v4
-      
       - name: Download Lambda packages
         uses: actions/download-artifact@v4
         with:
           name: lambda-packages
           path: ./terraform
-          
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -113,14 +111,6 @@ jobs:
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
         run: terraform plan -no-color
-          
-      - name: Terraform Init
-        run: terraform init
-
-      - name: Terraform Plan
-        if: github.event_name == 'pull_request'
-        run: terraform plan -no-color
-        
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve
@@ -198,83 +188,39 @@ jobs:
           docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
           docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
 
-  configure-and-deploy:
+  update-helm-values:
     needs: [manage-infra, build-and-scan]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: ap-southeast-2
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: false
-      - name: Terraform Init
-        working-directory: ./terraform
-        run: terraform init
-      - name: Install Ansible & Docker Collections
-        run: |
-          pip install ansible boto3 botocore requests
-          ansible-galaxy collection install community.aws amazon.aws community.docker
-      - name: Create Inventory File
-        run: |
-          INSTANCE_ID=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} \
-            --filters "Name=tag:Role,Values=app" "Name=instance-state-name,Values=running" \
-            --query "Reservations[].Instances[].InstanceId" --output text)
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          cat <<EOF > inventory.ini
-          [app_server]
-          $INSTANCE_ID
-          [app_server:vars]
-          ansible_connection=amazon.aws.aws_ssm
-          ansible_aws_ssm_region=${{ env.AWS_REGION }}
-          ansible_python_interpreter=/usr/bin/python3
-          ansible_aws_ssm_bucket_name=ansible-ops-$ACCOUNT_ID-${{ env.AWS_REGION }}
-          EOF
-      
-      - name: Deploy with Ansible
-        working-directory: ./terraform
-        run: |
-          # Extract Terraform Outputs
-          CERT_CONTENT=$(terraform output -raw ssl_cert_pem)
-          KEY_CONTENT=$(terraform output -raw ssl_key_pem)
-          COGNITO_ID=$(terraform output -raw user_pool_id)
-          COGNITO_CLIENT=$(terraform output -raw client_id)
+          fetch-depth: 0
 
-          cd ..
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          
-          # Create JSON vars file
-          jq -n \
-            --arg cert "$CERT_CONTENT" \
-            --arg key "$KEY_CONTENT" \
-            --arg reg "$REGISTRY" \
-            --arg back_repo "${{ env.ECR_BACKEND_REPO }}" \
-            --arg front_repo "${{ env.ECR_FRONTEND_REPO }}" \
-            --arg tag "${{ needs.build-and-scan.outputs.docker_tag }}" \
-            --arg aws_region "${{ env.AWS_REGION }}" \
-            --arg access_key "${{ secrets.AWS_ACCESS_KEY_ID }}" \
-            --arg secret_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
-            --arg cognito_id "$COGNITO_ID" \
-            --arg cognito_client "$COGNITO_CLIENT" \
-            '{
-              ssl_cert_content: $cert,
-              ssl_key_content: $key,
-              ecr_registry: $reg,
-              backend_repo: $back_repo,
-              frontend_repo: $front_repo,
-              image_tag: $tag,
-              aws_region: $aws_region,
-              aws_access_key: $access_key,
-              aws_secret_key: $secret_key,
-              cognito_user_pool_id: $cognito_id,
-              cognito_client_id: $cognito_client,
-              deploy_env: "prod"
-            }' > ansible_vars.json
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-          ansible-playbook -vvv -i inventory.ini ./ansible/playbooks/deploy-app-compose.yml \
-            --extra-vars "@ansible_vars.json"
+      - name: Get AWS Account ID
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "REGISTRY=$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> $GITHUB_ENV
+
+      - name: Update values.yaml variables
+        run: |
+          # This replaces the placeholder values with the real ones using sed
+          sed -i 's|image_tag: .*|image_tag: "${{ needs.build-and-scan.outputs.docker_tag }}"|' charts/webapp/values.yaml
+          sed -i 's|ecr_registry: .*|ecr_registry: "${{ env.REGISTRY }}"|' charts/webapp/values.yaml
+
+      - name: Commit and Push to GitHub
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add charts/webapp/values.yaml
+          git commit -m "GitOps: Update image tag to ${{ needs.build-and-scan.outputs.docker_tag }}"
+          git push

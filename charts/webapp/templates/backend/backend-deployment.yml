@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-backend
+  namespace: webapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flask-backend
+  template:
+    metadata:
+      labels:
+        app: flask-backend
+    spec:
+      containers:
+      - name: backend
+        image: backend-flask:v1
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 4567
+        env:
+          - name: PG_HOST
+            value: {{ .Values.POSTGRES_HOST | quote }}
+          - name: PG_PORT
+            value: {{ .Values.POSTGRES_PORT | quote }}
+          - name: PG_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: POSTGRES_DATABASE
+          - name: PG_USER
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: POSTGRES_USER
+          - name: PG_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: POSTGRES_PASSWORD
+            
+          - name: AWS_DEFAULT_REGION
+            value: {{ .Values.AWS_DEFAULT_REGION | quote }}
+          - name: AWS_COGNITO_USER_POOL_ID
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: AWS_COGNITO_USER_POOL_ID
+          - name: AWS_COGNITO_USER_POOL_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: AWS_COGNITO_USER_POOL_CLIENT_ID
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: AWS_SECRET_ACCESS_KEY
+          - name: FRONTEND_URL
+            value: {{ .Values.frontend_url | quote }}
+          - name: BACKEND_URL
+            value: {{ .Values.backend_url | quote }}
+          - name: CONNECTION_STRING
+            value: "postgresql://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DATABASE)"
+
+
