@@ -28,6 +28,8 @@ resource "aws_subnet" "subnet_2a" {
 
   tags = {
     Name = "subnet-2a"
+    "kubernetes.io/role/elb" = "1" 
+    "kubernetes.io/cluster/webapp-cluster" = "owned"
   }
 }
 
@@ -40,6 +42,8 @@ resource "aws_subnet" "subnet_2b" {
 
   tags = {
     Name = "subnet-2b"
+    "kubernetes.io/role/elb" = "1" 
+    "kubernetes.io/cluster/webapp-cluster" = "owned"
   }
 }
 
@@ -52,6 +56,8 @@ resource "aws_subnet" "subnet_2c" {
 
   tags = {
     Name = "subnet-2c"
+    "kubernetes.io/role/elb" = "1" 
+    "kubernetes.io/cluster/webapp-cluster" = "owned"
   }
 }
 
