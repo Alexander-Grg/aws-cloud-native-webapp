@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend-flask:
     image: "${ECR_REGISTRY}/${ECR_BACKEND_REPO}:${IMAGE_TAG}"
@@ -8,8 +6,6 @@ services:
       - "4567:4567"
     environment:
       AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION}"
-      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
-      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
       AWS_COGNITO_USER_POOL_ID: "${AWS_COGNITO_USER_POOL_ID}"
       AWS_COGNITO_USER_POOL_CLIENT_ID: "${AWS_COGNITO_USER_POOL_CLIENT_ID}"
       CONNECTION_STRING: "${CONNECTION_STRING}"
@@ -32,3 +28,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  xray-daemon:
+    image: "amazon/aws-xray-daemon"
+    restart: always
+    environment:
+      AWS_REGION: "${AWS_DEFAULT_REGION}"
+    command:
+      - "xray -o -b xray-daemon:2000"
+    ports:
+      - 2000:2000/udp

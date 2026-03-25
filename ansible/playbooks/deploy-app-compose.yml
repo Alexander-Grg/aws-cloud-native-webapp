@@ -8,7 +8,6 @@
     app_user: ubuntu
     secret_name: "webapp-rds-credentials"
 
-# passed in the pipeline ansible_vars.json
     ssl_cert_content: ""
     ssl_key_content: ""
     ecr_registry: ""
@@ -16,6 +15,8 @@
     frontend_repo: ""
     image_tag: ""
     aws_region: "ap-southeast-2"
+    cognito_user_pool_id: ""
+    cognito_client_id: ""
 
   tasks:
     - name: Ensure 2GB swap file exists
@@ -145,6 +146,8 @@
           PROD_CONNECTION_STRING=postgresql://{{ db_secrets.username }}:{{ db_secrets.password }}@{{ db_secrets.host }}:{{ db_secrets.port }}/{{ db_secrets.dbname }}
           FRONTEND_URL=https://{{ ansible_default_ipv4.address }}
           BACKEND_URL=https://{{ ansible_default_ipv4.address }}
+          AWS_COGNITO_USER_POOL_ID={{ cognito_user_pool_id }}
+          AWS_COGNITO_USER_POOL_CLIENT_ID={{ cognito_client_id }}
 
     - name: Remove old Docker data to free up space
       community.docker.docker_prune:
