@@ -10,4 +10,4 @@
   backend_vault_name: "webapp-backend-credentials"
 
 # CI/CD
-  ecr_registry: ""
+  ecr_registry: "735702561203.dkr.ecr.ap-southeast-2.amazonaws.com"
