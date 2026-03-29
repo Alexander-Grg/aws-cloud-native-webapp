@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-backend
+  namespace: webapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flask-backend
+  template:
+    metadata:
+      labels:
+        app: flask-backend
+    spec:
+      containers:
+      - name: backend
+        image: backend-flask:v1
+        imagePullPolicy: Never
+        ports:
+          - containerPort: 4567
+        env:
+          - name: PG_HOST
+            value: "postgres-db"
+          - name: PG_PORT
+            value: "5432"
+          - name: PG_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secret
+                key: POSTGRES_DB
+          - name: PG_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secret
+                key: POSTGRES_USER
+          - name: PG_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secret
+                key: POSTGRES_PASSWORD
+          - name: CONNECTION_STRING
+            value: "postgresql://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DATABASE)"
+            
+          - name: AWS_DEFAULT_REGION
+            value: "ap-southeast-2"
+          - name: AWS_COGNITO_USER_POOL_ID
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: AWS_COGNITO_USER_POOL_ID
+          - name: AWS_COGNITO_USER_POOL_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: AWS_COGNITO_USER_POOL_CLIENT_ID
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: AWS_SECRET_ACCESS_KEY
+          - name: FRONTEND_URL
+            value: "http://localhost:3000"
+          - name: BACKEND_URL
+            value: "http://localhost:4567"
