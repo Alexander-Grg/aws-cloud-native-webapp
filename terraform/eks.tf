@@ -9,6 +9,7 @@ module "eks" {
   subnet_ids = [aws_subnet.subnet_2a.id, aws_subnet.subnet_2b.id, aws_subnet.subnet_2c.id]
 
   enable_cluster_creator_admin_permissions = true
+  cluster_endpoint_public_access = true
 
   eks_managed_node_groups = {
     app_nodes = {

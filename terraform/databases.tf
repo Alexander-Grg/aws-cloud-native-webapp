@@ -169,6 +169,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "ansible_bucket_cleanup" {
   rule {
     id     = "expire-temp-files"
     status = "Enabled"
+    filter {}
 
     expiration {
       days = 1
