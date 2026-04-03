@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: frontend-react:v1
+        image: "{{ .Values.ecr_registry }}/frontend-react-js:{{ .Values.frontend_image_tag }}"
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
@@ -25,15 +25,9 @@ spec:
         - name: REACT_APP_AWS_COGNITO_REGION
           value: {{ .Values.AWS_DEFAULT_REGION | quote }}
         - name: REACT_APP_AWS_USER_POOLS_ID
-          valueFrom:
-            secretKeyRef:
-              name: backend-secret
-              key: AWS_COGNITO_USER_POOL_ID
+          value: {{ .Values.cognito_user_pool_id | quote }}
         - name: REACT_APP_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: backend-secret
-              key: AWS_COGNITO_USER_POOL_CLIENT_ID
+          value: {{ .Values.cognito_client_id | quote }}
         - name: REACT_APP_BACKEND_URL
           value: {{ .Values.backend_url | quote }}
         - name: WDS_SOCKET_PORT

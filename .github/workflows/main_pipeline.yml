@@ -111,12 +111,6 @@ jobs:
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
         run: terraform plan -no-color
-          
-      - name: Terraform Init
-        run: terraform init
-      - name: Terraform Plan
-        if: github.event_name == 'pull_request'
-        run: terraform plan -no-color
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve
@@ -145,6 +139,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docker_tag: ${{ steps.vars.outputs.tag }}
+      pool_id: ${{ steps.cognito.outputs.pool_id }}
+      client_id: ${{ steps.cognito.outputs.client_id }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS Credentials
@@ -166,11 +162,14 @@ jobs:
           terraform_wrapper: false
       
       - name: Extract Live Cognito IDs
+        id: cognito
         working-directory: ./terraform
         run: |
           terraform init
           echo "COGNITO_USER_POOL_ID=$(terraform output -raw user_pool_id)" >> $GITHUB_ENV
           echo "COGNITO_CLIENT_ID=$(terraform output -raw client_id)" >> $GITHUB_ENV
+          echo "pool_id=$(terraform output -raw user_pool_id)" >> $GITHUB_OUTPUT
+          echo "client_id=$(terraform output -raw client_id)" >> $GITHUB_OUTPUT
       
       - name: Build Backend Image
         run: docker build -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
@@ -219,10 +218,13 @@ jobs:
 
       - name: Update values.yaml variables
         run: |
-          # This replaces the placeholder values with the real ones using sed
-          sed -i 's|image_tag: .*|image_tag: "${{ needs.build-and-scan.outputs.docker_tag }}"|' charts/webapp/values.yaml
-          sed -i 's|ecr_registry: .*|ecr_registry: "${{ env.REGISTRY }}"|' charts/webapp/values.yaml
-
+          sed -i 's|^[[:space:]]*frontend_image_tag:.*|  frontend_image_tag: "${{ needs.build-and-scan.outputs.docker_tag }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*backend_image_tag:.*|  backend_image_tag: "${{ needs.build-and-scan.outputs.docker_tag }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*ecr_registry:.*|  ecr_registry: "${{ env.REGISTRY }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*cognito_user_pool_id:.*|  cognito_user_pool_id: "${{ needs.build-and-scan.outputs.pool_id }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*cognito_client_id:.*|  cognito_client_id: "${{ needs.build-and-scan.outputs.client_id }}"|' charts/webapp/values.yaml
+      
+          cat charts/webapp/values.yaml
       - name: Commit and Push to GitHub
         run: |
           git config --global user.name "github-actions[bot]"

@@ -61,3 +61,25 @@ variable "alarm_email" {
   type        = string
   default     = "alx.a.grg@gmail.com"
 }
+
+# ArgoCD
+
+variable "github_token" {
+  description = "GitHub PAT for ArgoCD to access private repo"
+  type        = string
+  sensitive   = true
+}
+
+# Backend secrets for the AWS secrets manager
+
+variable "backend_aws_access_key" {
+  description = "AWS Access Key ID for the Flask backend"
+  type        = string
+  sensitive   = true
+}
+
+variable "backend_aws_secret_key" {
+  description = "AWS Secret Access Key for the Flask backend"
+  type        = string
+  sensitive   = true
+}

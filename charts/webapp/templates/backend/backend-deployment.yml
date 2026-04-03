@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: backend-flask:v1
+        image: "{{ .Values.ecr_registry }}/backend-flask:{{ .Values.backend_image_tag }}"
         imagePullPolicy: Always
         ports:
           - containerPort: 4567
@@ -43,15 +43,9 @@ spec:
           - name: AWS_DEFAULT_REGION
             value: {{ .Values.AWS_DEFAULT_REGION | quote }}
           - name: AWS_COGNITO_USER_POOL_ID
-            valueFrom:
-              secretKeyRef:
-                name: backend-secret
-                key: AWS_COGNITO_USER_POOL_ID
+            value: {{ .Values.cognito_user_pool_id | quote }}
           - name: AWS_COGNITO_USER_POOL_CLIENT_ID
-            valueFrom:
-              secretKeyRef:
-                name: backend-secret
-                key: AWS_COGNITO_USER_POOL_CLIENT_ID
+            value: {{ .Values.cognito_client_id | quote }}
           - name: AWS_ACCESS_KEY_ID
             valueFrom:
               secretKeyRef:
@@ -66,7 +60,10 @@ spec:
             value: {{ .Values.frontend_url | quote }}
           - name: BACKEND_URL
             value: {{ .Values.backend_url | quote }}
-          - name: CONNECTION_STRING
-            value: "postgresql://$(PG_USER):$(PG_PASSWORD)@$(PG_HOST):$(PG_PORT)/$(PG_DATABASE)"
+          - name: PROD_CONNECTION_STRING
+            valueFrom:
+              secretKeyRef:
+                name: backend-secret
+                key: PROD_CONNECTION_STRING
 
 

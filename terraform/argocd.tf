@@ -1,5 +1,5 @@
 provider "helm" {
-    kubernetes {
+  kubernetes {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
     
@@ -8,6 +8,17 @@ provider "helm" {
       command     = "aws"
       args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
     }
+  }
+}
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
   }
 }
 
@@ -22,6 +33,25 @@ resource "helm_release" "argocd" {
   depends_on = [module.eks] 
 }
 
+resource "kubernetes_secret_v1" "github_repo_secret" {
+  metadata {
+    name      = "github-repo-secret"
+    namespace = "argocd"
+    labels = {
+      "argocd.argoproj.io/secret-type" = "repository"
+    }
+  }
+
+  data = {
+    type     = "git"
+    url      = "https://github.com/Alexander-Grg/aws-cloud-native-webapp.git"
+    username = "Alexander-Grg"
+    password = var.github_token
+  }
+
+  depends_on = [helm_release.argocd]
+}
+
 resource "helm_release" "argocd_apps" {
   name       = "argocd-apps"
   repository = "https://argoproj.github.io/argo-helm"
@@ -29,14 +59,33 @@ resource "helm_release" "argocd_apps" {
   namespace  = "argocd"
   version    = "2.0.0"
 
-  depends_on = [helm_release.argocd]
+  depends_on = [
+    helm_release.argocd,
+    kubernetes_secret_v1.github_repo_secret,
+    null_resource.gateway_api_crds,
+    helm_release.external_secrets
+  ]
 
   values = [
     <<-EOT
+    projects:
+      webapp-project:
+        description: Custom project for webapp
+        sourceRepos:
+          - '*'
+        destinations:
+          - namespace: 'webapp'
+            server: https://kubernetes.default.svc
+          - namespace: 'argocd'
+            server: https://kubernetes.default.svc
+        clusterResourceWhitelist:
+          - group: '*'
+            kind: '*'
+            
     applications:
       webapp:
         namespace: argocd
-        project: default
+        project: webapp-project
         source:
           repoURL: "https://github.com/Alexander-Grg/aws-cloud-native-webapp.git"
           targetRevision: HEAD
@@ -52,4 +101,16 @@ resource "helm_release" "argocd_apps" {
             - CreateNamespace=true
     EOT
   ]
+}
+
+resource "kubernetes_service_account_v1" "external_secrets_sa" {
+  metadata {
+    name      = "external-secrets-sa"
+    namespace = "kube-system"
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.external_secrets_role.arn
+    }
+  }
+
+  depends_on = [module.eks]
 }

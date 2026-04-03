@@ -1,4 +1,6 @@
 # Non secret values
+  cognito_user_pool_id: "placeholder"
+  cognito_client_id: "placeholder"
   frontend_url: "http://localhost:3000"
   backend_url: "http://localhost:4567"
   AWS_DEFAULT_REGION: "ap-southeast-2"
@@ -11,3 +13,5 @@
 
 # CI/CD
   ecr_registry: "735702561203.dkr.ecr.ap-southeast-2.amazonaws.com"
+  frontend_image_tag: "20260401-1455-6a2404e"
+  backend_image_tag: "20260401-1455-6a2404e"

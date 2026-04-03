@@ -10,6 +10,14 @@ resource "aws_security_group" "vpc_endpoints_sg" {
     protocol        = "tcp"
     security_groups = [aws_security_group.lambda_sg.id]
   }
+
+  ingress {
+    description = "HTTPS from VPC (EKS Nodes)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
 }
 
 resource "aws_vpc_endpoint" "dynamodb" {

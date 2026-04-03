@@ -21,4 +21,16 @@ module "eks" {
       capacity_type  = "SPOT"
     }
   }
+
+  node_security_group_additional_rules = {
+    ingress_allow_alb_nodeports = {
+      description              = "Allow ALB to route to NodePorts"
+      protocol                 = "tcp"
+      from_port                = 30000
+      to_port                  = 32767
+      type                     = "ingress"
+      cidr_blocks              = [aws_vpc.main.cidr_block]
+    }
+  }
 }
+

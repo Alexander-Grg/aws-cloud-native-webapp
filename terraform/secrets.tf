@@ -25,3 +25,29 @@ resource "aws_iam_role_policy_attachment" "lambda_secrets_manager" {
   role       = aws_iam_role.webapp_post_confirmation_role.name
   policy_arn = "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
 }
+
+# Backend Secrets Vault
+resource "aws_secretsmanager_secret" "backend_secrets" {
+  name = "webapp-backend-credentials"
+
+  recovery_window_in_days = 0
+  
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "backend_secrets_version" {
+  secret_id     = aws_secretsmanager_secret.backend_secrets.id
+  
+  secret_string = jsonencode({
+    POSTGRES_DATABASE = aws_db_instance.webapp_rds_instance.db_name
+    POSTGRES_USER     = aws_db_instance.webapp_rds_instance.username
+    POSTGRES_PASSWORD = var.db_password
+    
+    AWS_ACCESS_KEY_ID     = var.backend_aws_access_key
+    AWS_SECRET_ACCESS_KEY = var.backend_aws_secret_key
+    PROD_CONNECTION_STRING = "postgresql://${aws_db_instance.webapp_rds_instance.username}:${var.db_password}@${aws_db_instance.webapp_rds_instance.address}:${aws_db_instance.webapp_rds_instance.port}/${aws_db_instance.webapp_rds_instance.db_name}"
+  })
+}
