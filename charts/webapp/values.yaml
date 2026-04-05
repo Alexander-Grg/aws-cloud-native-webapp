@@ -1,6 +1,6 @@
 # Non secret values
-  cognito_user_pool_id: "ap-southeast-2_wZri5WrDW"
-  cognito_client_id: "1be9g239i904k5j20c3sn8tn4r"
+  cognito_user_pool_id: "ap-southeast-2_C88tg02PZ"
+  cognito_client_id: "74ddrntvbgusa1oit1ugu21584"
   frontend_url: "http://localhost:3000"
   backend_url: "http://localhost:4567"
   AWS_DEFAULT_REGION: "ap-southeast-2"
@@ -13,5 +13,5 @@
 
 # CI/CD
   ecr_registry: "735702561203.dkr.ecr.ap-southeast-2.amazonaws.com"
-  frontend_image_tag: "20260403-1036-bf47283"
-  backend_image_tag: "20260403-1036-bf47283"
+  frontend_image_tag: "20260405-0737-53ca048"
+  backend_image_tag: "20260405-0737-53ca048"
