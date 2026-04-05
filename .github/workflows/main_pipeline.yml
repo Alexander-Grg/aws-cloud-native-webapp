@@ -199,6 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -225,10 +226,21 @@ jobs:
           sed -i 's|^[[:space:]]*cognito_client_id:.*|  cognito_client_id: "${{ needs.build-and-scan.outputs.client_id }}"|' charts/webapp/values.yaml
       
           cat charts/webapp/values.yaml
-      - name: Commit and Push to GitHub
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add charts/webapp/values.yaml
-          git commit -m "GitOps: Update image tag to ${{ needs.build-and-scan.outputs.docker_tag }}"
-          git push
+
+      - name: Commit and Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "GitOps: Update image tag to ${{ needs.build-and-scan.outputs.docker_tag }}"
+          title: "GitOps: Deploy new image tags (${{ needs.build-and-scan.outputs.docker_tag }})"
+          body: |
+            ## Automated GitOps Deployment
+            This PR was generated automatically by the CI/CD pipeline.
+            
+            **Updated Components:**
+            - Frontend Tag: `${{ needs.build-and-scan.outputs.docker_tag }}`
+            - Backend Tag: `${{ needs.build-and-scan.outputs.docker_tag }}`
+            
+            *Merging this PR will trigger ArgoCD to sync the new images to the EKS cluster.*
+          branch: gitops/update-tags-${{ needs.build-and-scan.outputs.docker_tag }}
+          base: main
