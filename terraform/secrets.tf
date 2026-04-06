@@ -48,6 +48,6 @@ resource "aws_secretsmanager_secret_version" "backend_secrets_version" {
     
     AWS_ACCESS_KEY_ID     = var.backend_aws_access_key
     AWS_SECRET_ACCESS_KEY = var.backend_aws_secret_key
-    PROD_CONNECTION_STRING = "postgresql://${aws_db_instance.webapp_rds_instance.username}:${var.db_password}@${aws_db_instance.webapp_rds_instance.address}:${aws_db_instance.webapp_rds_instance.port}/${aws_db_instance.webapp_rds_instance.db_name}"
+    CONNECTION_STRING = "postgresql://${aws_db_instance.webapp_rds_instance.username}:${var.db_password}@${aws_db_instance.webapp_rds_instance.address}:${aws_db_instance.webapp_rds_instance.port}/${aws_db_instance.webapp_rds_instance.db_name}"
   })
 }

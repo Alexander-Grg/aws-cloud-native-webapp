@@ -60,10 +60,10 @@ spec:
             value: {{ .Values.frontend_url | quote }}
           - name: BACKEND_URL
             value: {{ .Values.backend_url | quote }}
-          - name: PROD_CONNECTION_STRING
+          - name: CONNECTION_STRING
             valueFrom:
               secretKeyRef:
                 name: backend-secret
-                key: PROD_CONNECTION_STRING
+                key: CONNECTION_STRING
 
 
