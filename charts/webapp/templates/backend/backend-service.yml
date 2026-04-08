@@ -3,10 +3,13 @@ kind: Service
 metadata:
   name: backend-flask-service
   namespace: webapp
+  labels:
+    app: flask-backend
 spec:
   selector:
     app: flask-backend
   ports:
-    - protocol: TCP
+    - name: http-metrics
+      protocol: TCP
       port: 4567    
-      targetPort: 4567 
+      targetPort: 4567
