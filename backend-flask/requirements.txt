@@ -26,3 +26,6 @@ momento
 
 # Security Fix for CVE-2026-24049
 wheel>=0.46.2
+
+# Monitoring
+prometheus-flask-exporter
