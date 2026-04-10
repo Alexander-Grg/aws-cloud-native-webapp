@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: webapp
+  namespace: argocd
+spec:
+  project: webapp-project
+  source:
+    repoURL: "https://github.com/Alexander-Grg/aws-cloud-native-webapp.git"
+    targetRevision: HEAD
+    path: charts/webapp
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: webapp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

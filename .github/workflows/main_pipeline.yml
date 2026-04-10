@@ -176,7 +176,10 @@ jobs:
           echo "client_id=$(terraform output -raw client_id)" >> $GITHUB_OUTPUT
       
       - name: Build Backend Image
-        run: docker build -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
+        run: |
+            docker build \
+            -f ./backend-flask/Dockerfile.prod \
+            -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
       
       - name: Build Frontend Image
         run: |

@@ -4,7 +4,7 @@ services:
   backend-flask:
     build: 
       context: ./backend-flask
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
       - "4567:4567"
     environment:
@@ -28,7 +28,7 @@ services:
   frontend-react-js:
     build: 
       context: ./frontend-react-js
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
       - "3000:3000"
     environment:

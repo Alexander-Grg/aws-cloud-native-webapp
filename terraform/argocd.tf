@@ -78,21 +78,23 @@ resource "helm_release" "argocd_apps" {
             server: https://kubernetes.default.svc
           - namespace: 'argocd'
             server: https://kubernetes.default.svc
+          - namespace: 'monitoring'
+            server: https://kubernetes.default.svc
         clusterResourceWhitelist:
           - group: '*'
             kind: '*'
             
     applications:
-      webapp:
+      root-app:
         namespace: argocd
         project: webapp-project
         source:
           repoURL: "https://github.com/Alexander-Grg/aws-cloud-native-webapp.git"
           targetRevision: HEAD
-          path: charts/webapp
+          path: argocd-apps
         destination:
           server: "https://kubernetes.default.svc"
-          namespace: webapp
+          namespace: argocd
         syncPolicy:
           automated:
             prune: true
