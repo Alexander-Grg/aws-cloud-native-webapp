@@ -13,5 +13,5 @@
 
 # CI/CD
   ecr_registry: "735702561203.dkr.ecr.ap-southeast-2.amazonaws.com"
-  frontend_image_tag: "20260410-0634-df9afd1"
-  backend_image_tag: "20260410-0634-df9afd1"
+  frontend_image_tag: "20260410-0845-6443760"
+  backend_image_tag: "20260410-0845-6443760"
