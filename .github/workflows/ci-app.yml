@@ -1,14 +1,17 @@
-name: CI/CD Pipeline
+name: Application CI/CD
 
 on:
   push:
     branches: [main, develop]
-    paths-ignore:
-      - 'charts/webapp/values.yaml'
+    paths:
+      - 'backend-flask/**'
+      - 'frontend-react-js/**'
+      - '.github/workflows/ci-app.yml'
   pull_request:
     branches: [main, develop]
-    paths-ignore:
-      - 'charts/webapp/values.yaml'
+    paths:
+      - 'backend-flask/**'
+      - 'frontend-react-js/**'
 
 env:
   NODE_ENV: test
@@ -17,14 +20,13 @@ env:
   AWS_REGION: ap-southeast-2
   ECR_BACKEND_REPO: backend-flask
   ECR_FRONTEND_REPO: frontend-react-js
-  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-  TF_CLOUD_ORGANIZATION: 'westlaw_personal'
 
 jobs:
-  security-and-quality:
+  security-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - name: Setup Python & Flake8
         uses: actions/setup-python@v5
         with:
@@ -38,13 +40,6 @@ jobs:
             --select=E9,F63,F7,F82 \
             --count --show-source --statistics
 
-  test-app-dev:
-    needs: security-and-quality
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Start services (Build & Run)
         env:
           AWS_DEFAULT_REGION: "us-east-1"
@@ -61,66 +56,19 @@ jobs:
         run: |
           docker compose up -d --build
           sleep 10
+      
       - name: Run backend tests
         run: docker compose exec -T backend-flask python -m pytest
+      
       - name: Run frontend tests
         run: docker compose exec -T -e CI=true frontend-react-js npm test -- --transformIgnorePatterns "node_modules/(?!axios)/"
+      
       - name: Cleanup
         if: always()
         run: docker compose down -v
 
-  build-lambda-packages:
-    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
-    needs: test-app-dev
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./terraform
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Build Lambda packages
-        run: |
-          chmod +x ../lambdas/build_lambdas.sh
-          ../lambdas/build_lambdas.sh
-      - name: Upload Lambda packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: lambda-packages
-          path: ./terraform/*.zip
-
-  manage-infra:
-    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
-    needs: build-lambda-packages
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./terraform
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download Lambda packages
-        uses: actions/download-artifact@v4
-        with:
-          name: lambda-packages
-          path: ./terraform
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-      - name: Terraform Init
-        run: terraform init
-      - name: Terraform Plan
-        if: github.event_name == 'pull_request'
-        run: terraform plan -no-color
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve
-
   create-ecr:
-    needs: test-app-dev
+    needs: security-and-test
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -137,8 +85,8 @@ jobs:
             aws ecr describe-repositories --repository-names $repo || aws ecr create-repository --repository-name $repo
           done
 
-  build-and-scan:
-    needs: [test-app-dev, create-ecr, manage-infra]
+  build-and-push:
+    needs: [security-and-test, create-ecr]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
@@ -153,9 +101,11 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+      
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+      
       - name: Generate Tag
         id: vars
         run: echo "tag=$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
@@ -168,6 +118,8 @@ jobs:
       - name: Extract Live Cognito IDs
         id: cognito
         working-directory: ./terraform
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
         run: |
           terraform init
           echo "COGNITO_USER_POOL_ID=$(terraform output -raw user_pool_id)" >> $GITHUB_ENV
@@ -177,20 +129,20 @@ jobs:
       
       - name: Build Backend Image
         run: |
-            docker build \
-            -f ./backend-flask/Dockerfile.prod \
-            -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
+          docker build \
+          -f ./backend-flask/Dockerfile.prod \
+          -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
       
       - name: Build Frontend Image
         run: |
-            docker build \
-            -f ./frontend-react-js/Dockerfile.prod \
-            --build-arg REACT_APP_BACKEND_URL="" \
-            --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
-            --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
-            --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ env.COGNITO_USER_POOL_ID }}" \
-            --build-arg REACT_APP_CLIENT_ID="${{ env.COGNITO_CLIENT_ID }}" \
-            -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
+          docker build \
+          -f ./frontend-react-js/Dockerfile.prod \
+          --build-arg REACT_APP_BACKEND_URL="" \
+          --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
+          --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
+          --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ env.COGNITO_USER_POOL_ID }}" \
+          --build-arg REACT_APP_CLIENT_ID="${{ env.COGNITO_CLIENT_ID }}" \
+          -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
       
       - name: Push Images to ECR
         run: |
@@ -200,8 +152,8 @@ jobs:
           docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
           docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
 
-  update-helm-values:
-    needs: [manage-infra, build-and-scan]
+  update-helm-manifests:
+    needs: build-and-push
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -211,7 +163,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -226,28 +178,25 @@ jobs:
 
       - name: Update values.yaml variables
         run: |
-          sed -i 's|^[[:space:]]*frontend_image_tag:.*|  frontend_image_tag: "${{ needs.build-and-scan.outputs.docker_tag }}"|' charts/webapp/values.yaml
-          sed -i 's|^[[:space:]]*backend_image_tag:.*|  backend_image_tag: "${{ needs.build-and-scan.outputs.docker_tag }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*frontend_image_tag:.*|  frontend_image_tag: "${{ needs.build-and-push.outputs.docker_tag }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*backend_image_tag:.*|  backend_image_tag: "${{ needs.build-and-push.outputs.docker_tag }}"|' charts/webapp/values.yaml
           sed -i 's|^[[:space:]]*ecr_registry:.*|  ecr_registry: "${{ env.REGISTRY }}"|' charts/webapp/values.yaml
-          sed -i 's|^[[:space:]]*cognito_user_pool_id:.*|  cognito_user_pool_id: "${{ needs.build-and-scan.outputs.pool_id }}"|' charts/webapp/values.yaml
-          sed -i 's|^[[:space:]]*cognito_client_id:.*|  cognito_client_id: "${{ needs.build-and-scan.outputs.client_id }}"|' charts/webapp/values.yaml
-      
+          sed -i 's|^[[:space:]]*cognito_user_pool_id:.*|  cognito_user_pool_id: "${{ needs.build-and-push.outputs.pool_id }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*cognito_client_id:.*|  cognito_client_id: "${{ needs.build-and-push.outputs.client_id }}"|' charts/webapp/values.yaml
           cat charts/webapp/values.yaml
 
       - name: Commit and Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "GitOps: Update image tag to ${{ needs.build-and-scan.outputs.docker_tag }}"
-          title: "GitOps: Deploy new image tags (${{ needs.build-and-scan.outputs.docker_tag }})"
+          commit-message: "GitOps: Update image tags to ${{ needs.build-and-push.outputs.docker_tag }}"
+          title: "GitOps: Deploy new image tags (${{ needs.build-and-push.outputs.docker_tag }})"
           body: |
             ## Automated GitOps Deployment
             This PR was generated automatically by the CI/CD pipeline.
             
             **Updated Components:**
-            - Frontend Tag: `${{ needs.build-and-scan.outputs.docker_tag }}`
-            - Backend Tag: `${{ needs.build-and-scan.outputs.docker_tag }}`
-            
-            *Merging this PR will trigger ArgoCD to sync the new images to the EKS cluster.*
-          branch: gitops/update-tags-${{ needs.build-and-scan.outputs.docker_tag }}
+            - Frontend Tag: `${{ needs.build-and-push.outputs.docker_tag }}`
+            - Backend Tag: `${{ needs.build-and-push.outputs.docker_tag }}`
+          branch: gitops/update-tags-${{ needs.build-and-push.outputs.docker_tag }}
           base: main
