@@ -6,7 +6,7 @@ provider "helm" {
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"
-      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
+      args        = ["eks", "get-token", "--region", "--cluster-name", module.eks.cluster_name]
     }
   }
 }
@@ -18,7 +18,7 @@ provider "kubernetes" {
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
+    args        = ["eks", "get-token", "--region", "--cluster-name", module.eks.cluster_name]
   }
 }
 
@@ -79,6 +79,8 @@ resource "helm_release" "argocd_apps" {
           - namespace: 'argocd'
             server: https://kubernetes.default.svc
           - namespace: 'monitoring'
+            server: https://kubernetes.default.svc
+          - namespace: 'kube-system'              
             server: https://kubernetes.default.svc
         clusterResourceWhitelist:
           - group: '*'
