@@ -80,6 +80,8 @@ resource "helm_release" "argocd_apps" {
             server: https://kubernetes.default.svc
           - namespace: 'monitoring'
             server: https://kubernetes.default.svc
+          - namespace: 'kube-system'              
+            server: https://kubernetes.default.svc
         clusterResourceWhitelist:
           - group: '*'
             kind: '*'
