@@ -13,5 +13,5 @@
 
 # CI/CD
   ecr_registry: "735702561203.dkr.ecr.ap-southeast-2.amazonaws.com"
-  frontend_image_tag: "git-1778da0"
-  backend_image_tag: "git-1778da0"
+  frontend_image_tag: "git-acbf95c"
+  backend_image_tag: "git-acbf95c"
