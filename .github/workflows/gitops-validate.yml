@@ -1,0 +1,30 @@
+name: GitOps Manifest Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'argocd-apps/**'
+      - 'charts/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'argocd-apps/**'
+      - 'charts/**'
+
+jobs:
+  lint-helm-and-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        
+      - name: Lint Helm Chart
+        run: helm lint ./charts/webapp/
+        
+      - name: Yamllint ArgoCD Apps
+        run: |
+          sudo apt-get install yamllint
+          yamllint -d "{extends: relaxed, rules: {line-length: disable}}" ./argocd-apps/
