@@ -13,3 +13,7 @@ spec:
   dataFrom:
   - extract:
       key: {{ .Values.backend_vault_name }}
+      conversionStrategy: Default
+      decodingStrategy: None
+      metadataPolicy: None
+      nullBytePolicy: Ignore
