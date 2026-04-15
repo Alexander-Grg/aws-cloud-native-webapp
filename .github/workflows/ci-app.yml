@@ -1,0 +1,293 @@
+name: Application CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'backend-flask/**'
+      - 'frontend-react-js/**'
+      - '.github/workflows/ci-app.yml'
+      # terraform/** and lambdas/** are intentionally excluded here.
+      # If infra code changed, cd-infra.yml runs first and then triggers
+      # this workflow via workflow_run once infrastructure is confirmed ready.
+      # This prevents a race where ci-app tries to read Terraform outputs
+      # while cd-infra is still mid-apply.
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'backend-flask/**'
+      - 'frontend-react-js/**'
+  workflow_run:
+    workflows: ["Infrastructure CD"]
+    types:
+      - completed
+    branches: [main]
+
+env:
+  NODE_ENV: test
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+  AWS_REGION: ap-southeast-2
+  ECR_BACKEND_REPO: backend-flask
+  ECR_FRONTEND_REPO: frontend-react-js
+  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+  TF_CLOUD_ORGANIZATION: 'westlaw_personal'
+
+# Use event_name in the group key so a workflow_run trigger does NOT cancel
+# a concurrent push-triggered run (and vice versa).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  security-and-test:
+    # On workflow_run events, skip this job — infra CD already completed and
+    # there may be no new app code to retest. For push/PR this is the quality gate.
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python & Flake8
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Flake8
+        run: pip install flake8
+
+      - name: Run Flake8
+        run: |
+          flake8 ./backend-flask \
+            --exclude=./backend-flask/venv,./backend-flask/.venv \
+            --select=E9,F63,F7,F82 \
+            --count --show-source --statistics
+
+      - name: Start services (Build & Run)
+        env:
+          AWS_DEFAULT_REGION: "us-east-1"
+          AWS_ACCESS_KEY_ID: "testing"
+          AWS_SECRET_ACCESS_KEY: "testing"
+          AWS_COGNITO_USER_POOL_ID: "us-east-1_xxxx"
+          AWS_COGNITO_USER_POOL_CLIENT_ID: "testing"
+          CONNECTION_STRING: "postgresql://postgres:password@db:5432/webapp"
+          PROD_CONNECTION_STRING: "postgresql://postgres:password@db:5432/webapp"
+          FRONTEND_URL: "http://localhost:3000"
+          BACKEND_URL: "http://localhost:4567"
+          PG_DATABASE: "webapp"
+          PG_PASSWORD: "password"
+        run: |
+          docker compose up -d --build
+          sleep 10
+
+      - name: Run backend tests
+        run: docker compose exec -T backend-flask python -m pytest
+
+      - name: Run frontend tests
+        run: docker compose exec -T -e CI=true frontend-react-js npm test -- --transformIgnorePatterns "node_modules/(?!axios)/"
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+
+  create-ecr:
+    # Runs after tests on a normal push, OR directly on workflow_run.
+    # IMPORTANT: the workflow_run 'completed' event fires on both success AND
+    # failure. Without the conclusion check, a failed terraform apply would
+    # still kick off ECR creation and image builds. The monolith avoided this
+    # naturally via 'needs: manage-infra' — here we replicate that guard explicitly.
+    needs: security-and-test
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      (
+        needs.security-and-test.result == 'success' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create Repositories
+        run: |
+          for repo in ${{ env.ECR_BACKEND_REPO }} ${{ env.ECR_FRONTEND_REPO }}; do
+            aws ecr describe-repositories --repository-names $repo || \
+            aws ecr create-repository --repository-name $repo
+          done
+
+  build-and-push:
+    needs: [security-and-test, create-ecr]
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      needs.create-ecr.result == 'success' &&
+      (
+        needs.security-and-test.result == 'success' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      )
+    runs-on: ubuntu-latest
+    outputs:
+      docker_tag: ${{ steps.vars.outputs.tag }}
+      pool_id: ${{ steps.cognito.outputs.pool_id }}
+      client_id: ${{ steps.cognito.outputs.client_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Generate Tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "tag=git-${GITHUB_SHA::7}-post-infra" >> $GITHUB_OUTPUT
+          else
+            echo "tag=git-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Terraform for ID extraction
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Extract Live Cognito IDs
+        id: cognito
+        working-directory: ./terraform
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_WORKSPACE: "aws-cloud-native-webapp"
+        run: |
+          terraform init -no-color
+
+          OUTPUTS=$(terraform output -json 2>/dev/null)
+          echo "DEBUG - Raw Terraform Outputs: $OUTPUTS"
+
+          # Hard fail if Terraform outputs are missing or invalid JSON.
+          # A "pending" Cognito ID baked into the frontend image would produce
+          # a broken deployment that silently fails at runtime — fail here instead.
+          if ! echo "$OUTPUTS" | jq empty >/dev/null 2>&1; then
+            echo "::error::Terraform outputs are missing or invalid JSON. Has cd-infra.yml run successfully yet?"
+            exit 1
+          fi
+
+          POOL_ID=$(echo "$OUTPUTS" | jq -r '.user_pool_id.value // empty')
+          CLIENT_ID=$(echo "$OUTPUTS" | jq -r '.client_id.value // empty')
+
+          if [ -z "$POOL_ID" ] || [ -z "$CLIENT_ID" ]; then
+            echo "::error::user_pool_id or client_id is missing from Terraform outputs. Infrastructure may not be fully provisioned."
+            exit 1
+          fi
+
+          echo "COGNITO_USER_POOL_ID=$POOL_ID" >> $GITHUB_ENV
+          echo "COGNITO_CLIENT_ID=$CLIENT_ID" >> $GITHUB_ENV
+          echo "pool_id=$POOL_ID" >> $GITHUB_OUTPUT
+          echo "client_id=$CLIENT_ID" >> $GITHUB_OUTPUT
+
+      - name: Check if image already exists in ECR
+        id: check-image
+        run: |
+          if aws ecr describe-images \
+            --repository-name ${{ env.ECR_BACKEND_REPO }} \
+            --image-ids imageTag=${{ steps.vars.outputs.tag }} > /dev/null 2>&1; then
+            echo "Image already exists in ECR. Skipping build and push to save compute."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Image does not exist. Proceeding with Docker build."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Backend Image
+        if: steps.check-image.outputs.exists != 'true'
+        run: |
+          docker build \
+            -f ./backend-flask/Dockerfile.prod \
+            -t backend:${{ steps.vars.outputs.tag }} ./backend-flask
+
+      - name: Build Frontend Image
+        if: steps.check-image.outputs.exists != 'true'
+        run: |
+          docker build \
+            -f ./frontend-react-js/Dockerfile.prod \
+            --build-arg REACT_APP_BACKEND_URL="" \
+            --build-arg REACT_APP_AWS_PROJECT_REGION="${{ env.AWS_REGION }}" \
+            --build-arg REACT_APP_AWS_COGNITO_REGION="${{ env.AWS_REGION }}" \
+            --build-arg REACT_APP_AWS_USER_POOLS_ID="${{ env.COGNITO_USER_POOL_ID }}" \
+            --build-arg REACT_APP_CLIENT_ID="${{ env.COGNITO_CLIENT_ID }}" \
+            -t frontend:${{ steps.vars.outputs.tag }} ./frontend-react-js
+
+      - name: Push Images to ECR
+        if: steps.check-image.outputs.exists != 'true'
+        run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          docker tag backend:${{ steps.vars.outputs.tag }} \
+            $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
+          docker tag frontend:${{ steps.vars.outputs.tag }} \
+            $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
+          docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:${{ steps.vars.outputs.tag }}
+          docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:${{ steps.vars.outputs.tag }}
+
+  update-helm-manifests:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && needs.build-and-push.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get AWS Account ID
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "REGISTRY=$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> $GITHUB_ENV
+
+      - name: Update values.yaml variables
+        run: |
+          sed -i 's|^[[:space:]]*frontend_image_tag:.*|  frontend_image_tag: "${{ needs.build-and-push.outputs.docker_tag }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*backend_image_tag:.*|  backend_image_tag: "${{ needs.build-and-push.outputs.docker_tag }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*ecr_registry:.*|  ecr_registry: "${{ env.REGISTRY }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*cognito_user_pool_id:.*|  cognito_user_pool_id: "${{ needs.build-and-push.outputs.pool_id }}"|' charts/webapp/values.yaml
+          sed -i 's|^[[:space:]]*cognito_client_id:.*|  cognito_client_id: "${{ needs.build-and-push.outputs.client_id }}"|' charts/webapp/values.yaml
+          cat charts/webapp/values.yaml
+
+      - name: Commit and Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "GitOps: Update image tags to ${{ needs.build-and-push.outputs.docker_tag }}"
+          title: "GitOps: Deploy new image tags (${{ needs.build-and-push.outputs.docker_tag }})"
+          body: |
+            ## Automated GitOps Deployment
+            This PR was generated automatically by the CI/CD pipeline.
+
+            **Updated Components:**
+            - Frontend Tag: `${{ needs.build-and-push.outputs.docker_tag }}`
+            - Backend Tag: `${{ needs.build-and-push.outputs.docker_tag }}`
+
+            *Merging this PR will trigger ArgoCD to sync the new images to the EKS cluster.*
+          branch: gitops/update-tags-${{ github.sha }}-${{ github.run_id }}
+          base: main

@@ -53,6 +53,7 @@ resource "aws_subnet" "subnet_2c" {
   availability_zone       = "ap-southeast-2c"
   # trivy:ignore:AVD-AWS-0164
   map_public_ip_on_launch = true
+  # I would use a NAT gateway in a real production, but saving money for now
 
   tags = {
     Name = "subnet-2c"
