@@ -1,0 +1,36 @@
+name: GitOps Manifest Validation
+ 
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'argocd-apps/**'
+      - 'charts/**'
+      - '.github/workflows/ci-manifests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'argocd-apps/**'
+      - 'charts/**'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+ 
+jobs:
+  lint-helm-and-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+ 
+      - name: Lint Helm Chart
+        run: helm lint ./charts/webapp/
+ 
+      - name: Install yamllint
+        run: pip install yamllint
+ 
+      - name: Yamllint ArgoCD Apps
+        run: |
+          yamllint -d "{extends: relaxed, rules: {line-length: disable}}" ./argocd-apps/
