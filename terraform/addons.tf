@@ -37,10 +37,17 @@ resource "helm_release" "nginx_gateway" {
   namespace        = "nginx-gateway"
   create_namespace = true
 
-  set {
-    name  = "service.type"
-    value = "LoadBalancer"
-  }
+  values = [
+    yamlencode({
+      service = {
+        type                  = "LoadBalancer"
+        externalTrafficPolicy = "Cluster"
+        annotations = {
+          "service.beta.kubernetes.io/aws-load-balancer-type" = "nlb"
+        }
+      }
+    })
+  ]
 
   depends_on = [
     module.eks,
