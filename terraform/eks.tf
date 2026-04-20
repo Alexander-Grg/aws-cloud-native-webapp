@@ -31,6 +31,15 @@ module "eks" {
       type                     = "ingress"
       cidr_blocks              = [aws_vpc.main.cidr_block]
     }
+
+    ingress_vpc_all = {
+      description = "Allow all intra VPC traffic pod to pod communication"
+      protocol    = "-1"
+      from_port   = 0
+      to_port     = 0
+      type        = "ingress"
+      cidr_blocks = [aws_vpc.main.cidr_block]
+    }
   }
 }
 
