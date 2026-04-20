@@ -1,0 +1,79 @@
+  name: Infrastructure CD
+
+  on:
+    push:
+      branches: [main]
+      paths:
+        - 'terraform/**'
+        - 'lambdas/**'
+        - '.github/workflows/cd-infra.yml'
+    pull_request:
+      branches: [main]
+      paths:
+        - 'terraform/**'
+        - 'lambdas/**'
+
+  env:
+    TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+    TF_CLOUD_ORGANIZATION: 'westlaw_personal'
+
+  concurrency:
+    group: infrastructure-${{ github.ref }}
+    cancel-in-progress: false
+
+  jobs:
+    build-lambda-packages:
+      if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+      runs-on: ubuntu-latest
+      defaults:
+        run:
+          working-directory: ./terraform
+      steps:
+        - uses: actions/checkout@v4
+
+        - name: Setup Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: '3.12'
+
+        - name: Build Lambda packages
+          run: |
+            chmod +x ../lambdas/build_lambdas.sh
+            ../lambdas/build_lambdas.sh
+
+        - name: Upload Lambda packages
+          uses: actions/upload-artifact@v4
+          with:
+            name: lambda-packages
+            path: ./terraform/*.zip
+
+    manage-infra:
+      needs: build-lambda-packages
+      runs-on: ubuntu-latest
+      defaults:
+        run:
+          working-directory: ./terraform
+      steps:
+        - uses: actions/checkout@v4
+
+        - name: Download Lambda packages
+          uses: actions/download-artifact@v4
+          with:
+            name: lambda-packages
+            path: ./terraform
+
+        - name: Setup Terraform
+          uses: hashicorp/setup-terraform@v3
+          with:
+            terraform_wrapper: false
+
+        - name: Terraform Init
+          run: terraform init
+
+        - name: Terraform Plan
+          if: github.event_name == 'pull_request'
+          run: terraform plan -no-color
+
+        - name: Terraform Apply
+          if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+          run: terraform apply -auto-approve
